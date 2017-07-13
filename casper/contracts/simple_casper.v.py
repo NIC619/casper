@@ -350,6 +350,11 @@ def check_eligible_in_epoch(validator_index: num, epoch: num) -> num(const):
 # Update validator's deposit record in self.validators[validator_index].deposit and self.consensus_messages[epoch].validator_deposit[validator_index]
 # What this function does is subtracting the penalty from validator's deposit in every epoch
 def subtract_validator_deposit(validator_index: num):
+    # If validator join after epoch 0 or log back in, their latest update epoch would be 0
+    # We need to update it to (current epoch - 1) first
+    if self.validators[validator_index].latest_updated_epoch == 0 and self.validators[validator_index].dynasty_start > 0:
+        self.validators[validator_index].latest_updated_epoch = self.current_epoch - 1
+        self.consensus_messages[self.current_epoch - 1].validator_deposit[validator_index] = self.validators[validator_index].deposit
     # Subtract the penalty from validator's deposit according to penalty factor, starting from latest update epoch til current epoch
     for i in range(self.validators[validator_index].latest_updated_epoch + 1, self.current_epoch + 1):
         last_epoch_deposit = self.consensus_messages[i-1].validator_deposit[validator_index]
