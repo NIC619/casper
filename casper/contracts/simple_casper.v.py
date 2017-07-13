@@ -293,7 +293,7 @@ def flick_status(logout_msg: bytes <= 1024):
         self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
         # Set the withdrawal date
         self.validators[validator_index].withdrawal_epoch = self.current_epoch + self.withdrawal_delay / self.block_time / self.epoch_length
-        self.validator_update_deposit(validator_index)
+        self.subtract_validator_deposit(validator_index)
 
 # Removes a validator from the validator pool
 def delete_validator(validator_index: num):
@@ -347,9 +347,15 @@ def check_eligible_in_epoch(validator_index: num, epoch: num) -> num(const):
     if ((do <= dp and prev_in_mask == as_num256(0)) and dp < de):
         o += 1
     return o
-
-def validator_update_deposit(validator_index: num):
-
+# Update validator's deposit record in self.validators[validator_index].deposit and self.consensus_messages[epoch].validator_deposit[validator_index]
+# What this function does is subtracting the penalty from validator's deposit in every epoch
+def subtract_validator_deposit(validator_index: num):
+    # Subtract the penalty from validator's deposit according to penalty factor, starting from latest update epoch til current epoch
+    for i in range(self.validators[validator_index].latest_updated_epoch + 1, self.current_epoch + 1):
+        last_epoch_deposit = self.consensus_messages[i-1].validator_deposit[validator_index]
+        self.validators[validator_index].deposit *= (1 - self.penalty_factor)
+        self.consensus_messages[i].validator_deposit[validator_index] = self.validators[validator_index].deposit
+    self.validators[validator_index].latest_updated_epoch = self.current_epoch
     # After update validator's current deposit should be consistent
     assert self.validators[validator_index].deposit == self.consensus_messages[self.current_epoch].validator_deposit[validator_index]
 
@@ -394,7 +400,7 @@ def prepare(prepare_msg: bytes <= 1024):
     # Check that the prepare is on top of a justified prepare
     assert self.consensus_messages[source_epoch].ancestry_hash_justified[source_ancestry_hash]
     # Update validator deposit
-    self.validator_update_deposit(validator_index)
+    self.subtract_validator_deposit(validator_index)
     # validator's deposit in the epoch which the prepare is for 
     this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the prepare was submitted in time and the blockhash is correct
@@ -405,7 +411,7 @@ def prepare(prepare_msg: bytes <= 1024):
         self.consensus_messages[epoch].validator_deposit[validator_index] += reward
         # self.total_deposits[self.dynasty] += reward   # reward is now updated on epoch deposit instead of dynasty deposit
     else:   # if the prepare is for previous epoch, 
-        # validator's deposit in that epoch should be counted instead of current epoch
+        # validator's deposit in that epoch should be counted instead of deposit in current epoch
         this_validators_deposit = self.consensus_messages[epoch].validator_deposit[validator_index]
     # Can't prepare for this epoch again
     self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256] = \
@@ -419,13 +425,13 @@ def prepare(prepare_msg: bytes <= 1024):
         self.consensus_messages[epoch].prepares[sourcing_hash] = curdyn_prepares
     prevdyn_prepares = self.consensus_messages[epoch].prev_dyn_prepares[sourcing_hash]
     if in_prev_dynasty:
-        prevdyn_prepares += this_validators_deposit
+        prevdyn_prepares += self.consensus_messages[self.dynasty_start_epoch[self.dynasty_in_epoch[epoch]]-1].deposit
         self.consensus_messages[epoch].prev_dyn_prepares[sourcing_hash] = prevdyn_prepares
     # If enough prepares with the same epoch_source and hash are made,
     # then the hash value is justified for commitment
     # if (curdyn_prepares >= self.total_deposits[self.dynasty] * 2 / 3 and \
     #         prevdyn_prepares >= self.total_deposits[self.dynasty - 1] * 2 / 3) and \
-    if (curdyn_prepares >= self.total_deposits[self.dynasty_in_epoch[epoch]] * 2 / 3 and \
+    if (curdyn_prepares >= self.consensus_messages[epoch].deposit * 2 / 3 and \
             prevdyn_prepares >= self.total_deposits[self.dynasty_in_epoch[epoch]-1] * 2 / 3) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
             # not self.consensus_messages[epoch].ancestry_hash_justified[new_ancestry_hash]:
@@ -473,7 +479,7 @@ def commit(commit_msg: bytes <= 1024):
     assert self.validators[validator_index].prev_commit_epoch == prev_commit_epoch
     assert prev_commit_epoch < epoch
     self.validators[validator_index].prev_commit_epoch = epoch
-    this_validators_deposit = self.validators[validator_index].deposit
+    # this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the blockhash is correct
     if True:  #if blockhash(epoch * self.epoch_length) == hash:
         reward = floor(this_validators_deposit * self.reward_factor)
@@ -484,10 +490,10 @@ def commit(commit_msg: bytes <= 1024):
     # Record that this commit took place
     if in_current_dynasty:
         # self.consensus_messages[epoch].commits[hash] += this_validators_deposit
-        self.consensus_messages[epoch].commits[ancestry_hash] += this_validators_deposit
+        self.consensus_messages[epoch].commits[ancestry_hash] += self.validators[validator_index].deposit
     if in_prev_dynasty:
         # self.consensus_messages[epoch].prev_dyn_commits[hash] += this_validators_deposit
-        self.consensus_messages[epoch].prev_dyn_commits[ancestry_hash] += this_validators_deposit
+        self.consensus_messages[epoch].prev_dyn_commits[ancestry_hash] += self.consensus_messages[self.dynasty_start_epoch[self.dynasty_in_epoch[epoch]]-1].deposit
     # Record if sufficient commits have been made for the block to be finalized
     # if (self.consensus_messages[epoch].commits[hash] >= self.total_deposits[self.dynasty] * 2 / 3 and \
     #         self.consensus_messages[epoch].prev_dyn_commits[hash] >= self.total_deposits[self.dynasty - 1] * 2 / 3) and \
