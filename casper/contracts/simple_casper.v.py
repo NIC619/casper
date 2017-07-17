@@ -570,6 +570,10 @@ def double_prepare_slash(prepare1: bytes <= 1000, prepare2: bytes <= 1000):
     self.total_destroyed += validator_deposit * 24 / 25
     # if validator is still logged in, subtract his deposit from current epoch
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
+        if self.validators[validator_index].dynasty_end == self.dynasty + 1:
+            self.next_dyan_to_subtract += validator_deposit
+        if self.validators[validator_index].dynasty_end == self.dynasty + 2:
+            self.seconde_next_dyn_to_subtract += validator_deposit
         self.consensus_messages[self.current_epoch].total_deposit -= validator_deposit
         self.consensus_messages[self.current_epoch].validator_deposit[validator_index] = 0
     # self.total_deposits[self.dynasty] -= validator_deposit
@@ -606,9 +610,13 @@ def prepare_commit_inconsistency_slash(prepare_msg: bytes <= 1024, commit_msg: b
     self.total_destroyed += validator_deposit * 24 / 25
     # if validator is still logged in, subtract his deposit from current epoch
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
+        if self.validators[validator_index].dynasty_end == self.dynasty + 1:
+            self.next_dyan_to_subtract += validator_deposit
+        if self.validators[validator_index].dynasty_end == self.dynasty + 2:
+            self.seconde_next_dyn_to_subtract += validator_deposit
         self.consensus_messages[self.current_epoch].total_deposit -= validator_deposit
         self.consensus_messages[self.current_epoch].validator_deposit[validator_index] = 0
-    self.total_deposits[self.dynasty] -= validator_deposit
+    # self.total_deposits[self.dynasty] -= validator_deposit
     self.delete_validator(validator_index)
 
 def commit_non_justification_slash(commit_msg: bytes <= 1024):
@@ -634,9 +642,13 @@ def commit_non_justification_slash(commit_msg: bytes <= 1024):
     self.total_destroyed += validator_deposit * 24 / 25
     # if validator is still logged in, subtract his deposit from current epoch
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
+        if self.validators[validator_index].dynasty_end == self.dynasty + 1:
+            self.next_dyan_to_subtract += validator_deposit
+        if self.validators[validator_index].dynasty_end == self.dynasty + 2:
+            self.seconde_next_dyn_to_subtract += validator_deposit
         self.consensus_messages[self.current_epoch].total_deposit -= validator_deposit
         self.consensus_messages[self.current_epoch].validator_deposit[validator_index] = 0
-    self.total_deposits[self.dynasty] -= validator_deposit
+    # self.total_deposits[self.dynasty] -= validator_deposit
     self.delete_validator(validator_index)
 
 # Fill in the table for which hash is what-degree ancestor of which other hash
@@ -689,9 +701,13 @@ def prepare_non_justification_slash(prepare_msg: bytes <= 1024) -> num:
     self.total_destroyed += validator_deposit * 24 / 25
     # if validator is still logged in, subtract his deposit from current epoch
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
+        if self.validators[validator_index].dynasty_end == self.dynasty + 1:
+            self.next_dyan_to_subtract += validator_deposit
+        if self.validators[validator_index].dynasty_end == self.dynasty + 2:
+            self.seconde_next_dyn_to_subtract += validator_deposit
         self.consensus_messages[self.current_epoch].total_deposit -= validator_deposit
         self.consensus_messages[self.current_epoch].validator_deposit[validator_index] = 0
-    self.total_deposits[self.dynasty] -= validator_deposit
+    # self.total_deposits[self.dynasty] -= validator_deposit
     self.delete_validator(validator_index)
 
 # # Temporary backdoor for testing purposes (to allow recovering destroyed deposits)
