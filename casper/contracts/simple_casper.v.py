@@ -96,6 +96,9 @@ purity_checker: address
 # Reward for preparing or committing, as fraction of deposit size
 reward_factor: public(decimal)
 
+# Penalty for preparing or committing, as fraction of deposit size
+penalty_factor: public(decimal)
+
 # Desired total ether given out assuming 1M ETH deposited
 reward_at_1m_eth: decimal
 
@@ -117,6 +120,12 @@ real_ancestry_hash: public(bytes32[num])
 # validator's deposit will still change
 next_dyan_to_subtract: public(wei_value)
 seconde_next_dyn_to_subtract: public(wei_value)
+
+# Constant for reward factor
+k: num
+
+# Last finalized epoch
+last_finalized_epoch: public(num)
 
 def initiate():
     assert not self.initialized
@@ -144,6 +153,8 @@ def initiate():
     self.nextValidatorIndex = 1
     # Initialize the epoch counter
     self.current_epoch = block.number / self.epoch_length
+    # Initialize the last finalized epoch
+    self.last_finalized_epoch = self.current_epoch
     # Set the sighash calculator address
     self.sighasher = 0x476c2cA9a7f3B16FeCa86512276271FAf63B6a24
     # Set the purity checker address
@@ -162,6 +173,8 @@ def initiate():
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
     self.commit_log_topic = sha3("commit()")
+    # Set constant value for reward factor (TODO: k value)
+    self.k = 1
 
 # Called at the start of any epoch
 def initialize_epoch(epoch: num):
@@ -185,6 +198,7 @@ def initialize_epoch(epoch: num):
         self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
         self.second_next_dynasty_wei_delta = 0
         self.dynasty_start_epoch[self.dynasty] = epoch
+        self.last_finalized_epoch = epoch - 1
     self.dynasty_in_epoch[epoch] = self.dynasty
     # Compute square root factor
     ether_deposited_as_number = self.total_deposits[self.dynasty] / as_wei_value(1, ether)
@@ -194,11 +208,33 @@ def initialize_epoch(epoch: num):
     # Reward factor is the reward given for preparing or committing as a
     # fraction of that validator's deposit size
     base_coeff = 1.0 / sqrt * (self.reward_at_1m_eth / 1000)
-    # Rules:
-    # * You are penalized 2x per epoch
-    # * If you prepare, you get 1.5x, and if you commit you get another 1.5x
-    # Hence, assuming 100% performance, your reward per epoch is x
-    self.reward_factor = 1.5 * base_coeff
+
+    # Log function
+    x = 1.0 + self.current_epoch - self.last_finalized_epoch
+
+    l = 0.0
+    for i in range(20):
+        x /= 2
+        l += 1
+        if x < 2:
+            break
+
+    fp = 1.0
+    err = 0.001
+    for i in range(20):
+        if fp >= err:
+            fp /= 2
+            x *= x
+            if x >= 2:
+                x /= 2
+                l += fp
+        else:
+            break
+
+    # reward & penalty factor
+    self.reward_factor = self.k / sqrt
+    self.penalty_factor = self.reward_factor * l
+
     self.consensus_messages[epoch].deposit_scale_factor = self.consensus_messages[epoch - 1].deposit_scale_factor * (1 - 2 * base_coeff)
 
 # Send a deposit to join the validator set
