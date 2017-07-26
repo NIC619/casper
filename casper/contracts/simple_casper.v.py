@@ -237,11 +237,13 @@ def initialize_epoch(epoch: num):
         # Increment dynasty and add new deposit
         self.dynasty += 1
         self.total_deposits[self.dynasty] = floor((self.total_deposits[self.dynasty - 1] + self.next_dynasty_wei_delta) * (1 - 3.25 * self.penalty_factor[epoch]))
+        self.total_deposits[self.dynasty - 1] = floor(self.total_deposits[self.dynasty - 1] * (1 - 3.25 * self.penalty_factor[epoch]))
         self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
         self.second_next_dynasty_wei_delta = 0
         self.dynasty_start_epoch[self.dynasty] = epoch
     else:
         self.total_deposits[self.dynasty] = floor(self.total_deposits[self.dynasty] * (1 - 3.25 * self.penalty_factor[epoch]))
+        self.total_deposits[self.dynasty - 1] = floor(self.total_deposits[self.dynasty - 1] * (1 - 3.25 * self.penalty_factor[epoch]))
     self.dynasty_in_epoch[epoch] = self.dynasty
     # Apply penalty to log-out deposit
     self.next_dyan_to_subtract = floor(self.next_dyan_to_subtract * (1 - 3.25 * self.penalty_factor[epoch]))
@@ -324,7 +326,8 @@ def flick_status(logout_msg: bytes <= 1024):
         assert self.validators[validator_index].dynasty_end >= self.dynasty + 2
         # Set the end dynasty
         self.validators[validator_index].dynasty_end = self.dynasty + 2
-        self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
+        # self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
+        self.seconde_next_dyn_to_subtract += self.validators[validator_index].deposit
         # Set the withdrawal date
         self.validators[validator_index].withdrawal_epoch = self.current_epoch + self.withdrawal_delay / self.block_time / self.epoch_length
 

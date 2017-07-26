@@ -149,7 +149,7 @@ c.mine(EPOCH_LENGTH)
 casper.initialize_epoch(1)
 assert casper.get_nextValidatorIndex() == 1
 print("Epoch initialized")
-print("Reward factor: %.8f" % (casper.get_reward_factor() * 2 / 3))
+print("Reward factor: %.8f" % (casper.get_reward_factor(1) * 2 / 3))
 # Send a prepare message
 #configure_logging(config_string=config_string)
 epoch_1_anchash = utils.sha3(b'\x00' * 32 + c.chain.get_blockhash_by_number(1 * EPOCH_LENGTH))
@@ -177,8 +177,8 @@ print("Commit message processed")
 c.mine(EPOCH_LENGTH)
 casper.initialize_epoch(2) 
 # Check that the dynasty increased as expected
-print("Reward factor: %.8f" % (casper.get_reward_factor() * 2 / 3))
-print("Penalty factor: %.8f" % (casper.get_penalty_factor() * 2 / 3))
+print("Reward factor: %.8f" % (casper.get_reward_factor(2) * 2 / 3))
+print("Penalty factor: %.8f" % (casper.get_penalty_factor(2) * 2 / 3))
 assert casper.get_dynasty() == 1
 # assert casper.get_total_deposits(1) == casper.get_total_deposits(0) > 0
 print("Second epoch initialized, dynasty increased as expected")
@@ -280,8 +280,8 @@ print("Confirmed that one key is still sufficient to prepare and commit")
 c.mine(EPOCH_LENGTH)
 casper.initialize_epoch(3)
 print("Epoch 3 initialized")
-print("Reward factor: %.8f" % (casper.get_reward_factor() * 2 / 3))
-print("Penalty factor: %.8f" % (casper.get_penalty_factor() * 2 / 3))
+print("Reward factor: %.8f" % (casper.get_reward_factor(3) * 2 / 3))
+print("Penalty factor: %.8f" % (casper.get_penalty_factor(3) * 2 / 3))
 assert casper.get_dynasty() == 2
 # assert 3 * 10**18 <= casper.get_total_deposits(0) < 4 * 10**18
 # assert 3 * 10**18 <= casper.get_total_deposits(1) < 4 * 10**18
@@ -348,12 +348,20 @@ for i, k in enumerate([t.k0, t.k1, t.k2, t.k3, t.k4]):
 assert casper.get_consensus_messages__committed(4)
 c.mine()
 print("Prepared and committed")
+
+sum = 0
+for i in range(7):
+    casper.pay_penalty(i)
+    sum += casper.get_validators__deposit(i)
+print("sum of all validator's deposit: %0.8f" % (sum / utils.denoms.ether))
+print("total deposit of dynasty 3: %0.8f" % (casper.get_total_deposits(3) / utils.denoms.ether))
+
 # Start epoch 5 / dynasty 4
 c.mine(EPOCH_LENGTH)
 casper.initialize_epoch(5)
 print("Epoch 5 initialized")
-print("Reward factor: %.8f" % (casper.get_reward_factor() * 2 / 3))
-print("Penalty factor: %.8f" % (casper.get_penalty_factor() * 2 / 3))
+print("Reward factor: %.8f" % (casper.get_reward_factor(5) * 2 / 3))
+print("Penalty factor: %.8f" % (casper.get_penalty_factor(5) * 2 / 3))
 assert casper.get_dynasty() == 4
 # assert 21 * 10**18 <= casper.get_total_deposits(3) <= 22 * 10**18
 # assert 12 * 10**18 <= casper.get_total_deposits(4) <= 13 * 10**18
@@ -380,12 +388,20 @@ for i, k in enumerate([t.k0, t.k1, t.k2, t.k3, t.k4]):
 # Committed!
 assert casper.get_consensus_messages__committed(5)
 # Start epoch 6 / dynasty 5
+
+sum = 0
+for i in range(4):
+    casper.pay_penalty(i)
+    sum += casper.get_validators__deposit(i)
+print("sum of all validator's deposit: %0.8f" % (sum / utils.denoms.ether))
+print("total deposit of dynasty 4: %0.8f" % (casper.get_total_deposits(4) / utils.denoms.ether))
+
 c.mine(EPOCH_LENGTH)
 casper.initialize_epoch(6)
 assert casper.get_dynasty() == 5
 print("Epoch 6 initialized")
-print("Reward factor: %.8f" % (casper.get_reward_factor() * 2 / 3))
-print("Penalty factor: %.8f" % (casper.get_penalty_factor() * 2 / 3))
+print("Reward factor: %.8f" % (casper.get_reward_factor(6) * 2 / 3))
+print("Penalty factor: %.8f" % (casper.get_penalty_factor(6) * 2 / 3))
 # Explanation:
 # * During dynasty 0, the validator deposited, so he joins the current set in dynasty 2
 #   (epoch 3), and the previous set in dynasty 3 (epoch 4)
