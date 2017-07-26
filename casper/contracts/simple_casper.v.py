@@ -15,7 +15,9 @@ validators: public({
     # Addess to withdraw to
     withdrawal_addr: address,
     # Previous epoch in which this validator committed
-    prev_commit_epoch: num
+    prev_commit_epoch: num,
+    # Latest epoch in which the deposit has been updated
+    latest_updated_epoch: num
 }[num])
 
 # The current dynasty (validator set changes between dynasties)
@@ -94,10 +96,10 @@ sighasher: address
 purity_checker: address
 
 # Reward for preparing or committing, as fraction of deposit size
-reward_factor: public(decimal)
+reward_factor: public(decimal[num])
 
 # Penalty for preparing or committing, as fraction of deposit size
-penalty_factor: public(decimal)
+penalty_factor: public(decimal[num])
 
 # Desired total ether given out assuming 1M ETH deposited
 reward_at_1m_eth: decimal
@@ -122,7 +124,7 @@ next_dyan_to_subtract: public(wei_value)
 seconde_next_dyn_to_subtract: public(wei_value)
 
 # Constant for reward factor
-k: num
+k: public(decimal)
 
 # Last finalized epoch
 last_finalized_epoch: public(num)
@@ -149,6 +151,7 @@ def initiate():
         addr: 0x1Db3439a222C519ab44bb1144fC28167b4Fa6EE6,
         withdrawal_addr: 0x1Db3439a222C519ab44bb1144fC28167b4Fa6EE6,
         prev_commit_epoch: 0,
+        latest_updated_epoch: 0,
     }
     self.nextValidatorIndex = 1
     # Initialize the epoch counter
@@ -173,8 +176,9 @@ def initiate():
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
     self.commit_log_topic = sha3("commit()")
-    # Set constant value for reward factor (TODO: k value)
-    self.k = 1
+    # Set constant value for reward factor
+    # TODO: k value
+    self.k = 0.015
 
 # Called at the start of any epoch
 def initialize_epoch(epoch: num):
@@ -186,20 +190,6 @@ def initialize_epoch(epoch: num):
     # Set the ancestry hash of current epoch
     self.real_ancestry_hash[self.current_epoch] = sha3(concat(self.real_ancestry_hash[self.current_epoch-1]
                                                                 , blockhash(self.current_epoch * self.epoch_length)))
-    # Increment the dynasty
-    if self.consensus_messages[epoch - 1].committed:
-        # subtract logged out deposit
-        self.next_dynasty_wei_delta -= self.next_dyan_to_subtract
-        self.next_dyan_to_subtract = self.seconde_next_dyn_to_subtract
-        self.seconde_next_dyn_to_subtract = 0
-
-        self.dynasty += 1
-        self.total_deposits[self.dynasty] = self.total_deposits[self.dynasty - 1] + self.next_dynasty_wei_delta
-        self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
-        self.second_next_dynasty_wei_delta = 0
-        self.dynasty_start_epoch[self.dynasty] = epoch
-        self.last_finalized_epoch = epoch - 1
-    self.dynasty_in_epoch[epoch] = self.dynasty
     # Compute square root factor
     ether_deposited_as_number = self.total_deposits[self.dynasty] / as_wei_value(1, ether)
     sqrt = ether_deposited_as_number / 2.0
@@ -209,6 +199,9 @@ def initialize_epoch(epoch: num):
     # fraction of that validator's deposit size
     base_coeff = 1.0 / sqrt * (self.reward_at_1m_eth / 1000)
 
+    # Need to update last_finalized_epoch first to calculate reward and penalty factor
+    if self.consensus_messages[epoch - 1].committed:
+         self.last_finalized_epoch = epoch - 1
     # Log function
     x = 1.0 + self.current_epoch - self.last_finalized_epoch
 
@@ -231,11 +224,28 @@ def initialize_epoch(epoch: num):
         else:
             break
 
-    # reward & penalty factor
-    self.reward_factor = self.k / sqrt
-    self.penalty_factor = self.reward_factor * l
-
+    # Reward & penalty factor
+    self.reward_factor[epoch] = self.k / sqrt
+    self.penalty_factor[epoch] = self.reward_factor[epoch] * l
     self.consensus_messages[epoch].deposit_scale_factor = self.consensus_messages[epoch - 1].deposit_scale_factor * (1 - 2 * base_coeff)
+    # Increment the dynasty and update deposit
+    if self.consensus_messages[epoch - 1].committed:
+        # Subtract logged out deposit
+        self.next_dynasty_wei_delta -= self.next_dyan_to_subtract
+        self.next_dyan_to_subtract = self.seconde_next_dyn_to_subtract
+        self.seconde_next_dyn_to_subtract = 0
+        # Increment dynasty and add new deposit
+        self.dynasty += 1
+        self.total_deposits[self.dynasty] = floor((self.total_deposits[self.dynasty - 1] + self.next_dynasty_wei_delta) * (1 - 3.25 * self.penalty_factor[epoch]))
+        self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
+        self.second_next_dynasty_wei_delta = 0
+        self.dynasty_start_epoch[self.dynasty] = epoch
+    else:
+        self.total_deposits[self.dynasty] = floor(self.total_deposits[self.dynasty] * (1 - 3.25 * self.penalty_factor[epoch]))
+    self.dynasty_in_epoch[epoch] = self.dynasty
+    # Apply penalty to log-out deposit
+    self.next_dyan_to_subtract = floor(self.next_dyan_to_subtract * (1 - 3.25 * self.penalty_factor[epoch]))
+    self.seconde_next_dyn_to_subtract = floor(self.seconde_next_dyn_to_subtract * (1 - 3.25 * self.penalty_factor[epoch]))
 
 # Send a deposit to join the validator set
 def deposit(validation_addr: address, withdrawal_addr: address):
@@ -250,6 +260,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
         addr: validation_addr,
         withdrawal_addr: withdrawal_addr,
         prev_commit_epoch: 0,
+        latest_updated_epoch: 0,
     }
     self.nextValidatorIndex += 1
     self.second_next_dynasty_wei_delta += msg.value
@@ -307,6 +318,8 @@ def flick_status(logout_msg: bytes <= 1024):
         # self.validators[validator_index].withdrawal_epoch = 1000000000000000000000000000000
     # Logging out
     else:
+        # Update validator deposit
+        self.pay_penalty(validator_index)
         # Check that we haven't already withdrawn
         assert self.validators[validator_index].dynasty_end >= self.dynasty + 2
         # Set the end dynasty
@@ -314,6 +327,34 @@ def flick_status(logout_msg: bytes <= 1024):
         self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
         # Set the withdrawal date
         self.validators[validator_index].withdrawal_epoch = self.current_epoch + self.withdrawal_delay / self.block_time / self.epoch_length
+
+def pay_penalty(validator_index: num):
+    assert self.validators[validator_index].dynasty_start <= self.dynasty
+    # If validator join after epoch 0 or log back in, their latest update epoch would be 0
+    # If it's a first time update
+    if self.validators[validator_index].latest_updated_epoch == 0:
+        self.validators[validator_index].latest_updated_epoch = self.dynasty_start_epoch[self.validators[validator_index].dynasty_start] - 1
+    # Specify until which epoch should the validator pay
+    if self.validators[validator_index].dynasty_end < self.dynasty:
+        end_epoch = self.dynasty_start_epoch[self.validators[validator_index].dynasty_end + 1] - 1
+    else:
+        end_epoch = self.current_epoch
+    number_of_epochs = end_epoch - self.validators[validator_index].latest_updated_epoch
+    # Subtract the penalty from validator's deposit according to penalty factor in each epoch
+    # starting from latest update epoch til end epoch
+    # for j in range(100000):
+    #     if j == number_of_epochs:
+    #         break
+    #     i = j + self.validators[validator_index].latest_updated_epoch + 1
+    #     self.validators[validator_index].deposit = floor(self.validators[validator_index].deposit * (1 - self.penalty_factor[i]))
+    #     self.consensus_messages[i].validator_deposit[validator_index] = self.validators[validator_index].deposit
+    deposit_after_penalty = self.validators[validator_index].deposit
+    for j in range((self.validators[validator_index].latest_updated_epoch + 1), (self.validators[validator_index].latest_updated_epoch + 1) + 100000):
+        if j == self.validators[validator_index].latest_updated_epoch + 1 + number_of_epochs:
+            break
+        deposit_after_penalty = floor(deposit_after_penalty * (1 - 3.25 * self.penalty_factor[j]))
+    self.validators[validator_index].deposit = deposit_after_penalty
+    self.validators[validator_index].latest_updated_epoch = end_epoch
 
 # Removes a validator from the validator pool
 def delete_validator(validator_index: num):
@@ -327,6 +368,7 @@ def delete_validator(validator_index: num):
         addr: None,
         withdrawal_addr: None,
         prev_commit_epoch: 0,
+        latest_updated_epoch: 0,
     }
 
 # Withdraw deposited ether
@@ -403,7 +445,9 @@ def prepare(prepare_msg: bytes <= 1024):
     # Pay the reward if the prepare was submitted in time and the blockhash is correct
     # this_validators_deposit = self.validators[validator_index].deposit
     if self.current_epoch == epoch:  #if blockhash(epoch * self.epoch_length) == hash:
-        reward = floor(self.validators[validator_index].deposit * self.reward_factor)
+        # Update validator deposit
+        self.pay_penalty(validator_index)
+        reward = floor(self.validators[validator_index].deposit * self.reward_factor[epoch])
         self.validators[validator_index].deposit += reward
         if in_current_dynasty:
             self.total_deposits[self.dynasty] += reward
@@ -475,7 +519,9 @@ def commit(commit_msg: bytes <= 1024):
     # this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the blockhash is correct
     if True:  #if blockhash(epoch * self.epoch_length) == hash:
-        reward = floor(self.validators[validator_index].deposit * self.reward_factor)
+        # Update validator deposit
+        self.pay_penalty(validator_index)
+        reward = floor(self.validators[validator_index].deposit * self.reward_factor[epoch])
         self.validators[validator_index].deposit += reward
         if in_current_dynasty:
             self.total_deposits[self.dynasty] += reward
