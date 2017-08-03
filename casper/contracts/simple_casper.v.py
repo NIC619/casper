@@ -33,6 +33,9 @@ total_curdyn_deposits: decimal(wei / m)
 # Total deposits in the previous dynasty
 total_prevdyn_deposits: decimal(wei / m)
 
+# Total deposits in each dynasty
+total_deposits_in: decimal(wei / m)[num]
+
 # Mapping of dynasty to start epoch of that dynasty
 dynasty_start_epoch: public(num[num])
 
@@ -226,6 +229,7 @@ def initialize_epoch(epoch: num):
     # Increment the dynasty (if there are no validators yet, then all hashes finalize)
     if self.main_hash_finalized:
         self.dynasty += 1
+        self.total_deposits_in[self.dynasty - 2] = self.total_prevdyn_deposits
         self.total_prevdyn_deposits = self.total_curdyn_deposits
         self.total_curdyn_deposits += self.next_dynasty_wei_delta
         self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
@@ -403,7 +407,8 @@ def prepare(prepare_msg: bytes <= 1024):
     # Check that the prepare is on top of a justified prepare
     assert self.consensus_messages[source_epoch].ancestry_hash_justified[source_ancestry_hash]
     # This validator's deposit size
-    deposit_size = self.validators[validator_index].deposit
+    # deposit_size = self.validators[validator_index].deposit
+    deposit_size = self.get_deposit_size_in(validator_index, epoch)
     # Check that we have not yet prepared for this epoch
     # Pay the reward if the prepare was submitted in time and the prepare is preparing the correct data
     if (self.current_epoch == epoch and self.ancestry_hashes[epoch] == ancestry_hash) and \
@@ -427,11 +432,23 @@ def prepare(prepare_msg: bytes <= 1024):
         self.consensus_messages[epoch].prev_dyn_prepares[sourcing_hash] = prevdyn_prepares
     # If enough prepares with the same epoch_source and hash are made,
     # then the hash value is justified for commitment
-    if (curdyn_prepares >= self.total_curdyn_deposits * 2 / 3 and \
-            prevdyn_prepares >= self.total_prevdyn_deposits * 2 / 3) and \
+    # Submit a prepare from past past dynasty
+    if self.dynasty_in_epoch[epoch] < self.dynasty - 1:
+        total_curdyn_deposits = self.total_deposits_in(self.dynasty_in_epoch[epoch])
+        total_prevdyn_deposits = self.total_deposits_in(self.dynasty_in_epoch[epoch] - 1)
+    # Submit a prepare from last dynasty
+    elif self.dynasty_in_epoch[epoch] < self.dynasty:
+        total_curdyn_deposits = self.total_prevdyn_deposits
+        total_prevdyn_deposits = self.total_deposits_in(self.dynasty_in_epoch[epoch] - 1)
+    # Submit a prepare from present
+    else:
+        total_curdyn_deposits = self.total_curdyn_deposits
+        total_prevdyn_deposits = self.total_prevdyn_deposits
+    if (curdyn_prepares >= total_curdyn_deposits * 2 / 3 and \
+            prevdyn_prepares >= total_prevdyn_deposits * 2 / 3) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
         self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash] = True
-        if ancestry_hash == self.ancestry_hashes[epoch]:
+        if ancestry_hash == self.ancestry_hashes[epoch] and epoch == self.current_epoch:
             self.main_hash_justified = True
     raw_log([self.prepare_log_topic], prepare_msg)
 
@@ -481,7 +498,8 @@ def commit(commit_msg: bytes <= 1024):
     in_prev_dynasty = ((ds <= dp) and (dp < de))
     assert in_current_dynasty or in_prev_dynasty
     # This validator's deposit size
-    deposit_size = self.validators[validator_index].deposit
+    # deposit_size = self.validators[validator_index].deposit
+    deposit_size = self.get_deposit_size(validator_index)
     # Check that we have not yet committed for this epoch
     assert self.validators[validator_index].prev_commit_epoch == prev_commit_epoch
     assert prev_commit_epoch < epoch
