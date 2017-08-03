@@ -313,7 +313,9 @@ def get_total_prevdyn_deposits() -> wei_value:
 # Removes a validator from the validator pool
 def delete_validator(validator_index: num):
     assert msg.sender == self
-    self.next_dynasty_wei_delta -= self.validators[validator_index].deposit
+    # self.next_dynasty_wei_delta -= self.validators[validator_index].deposit
+    if self.validators[validator_index].dynasty_end + 1 >= self.dynasty:
+        self.next_dynasty_wei_delta -= self.get_deposit_size(validator_index)
     self.validators[validator_index] = {
         deposit: 0,
         dynasty_start: 0,
@@ -326,9 +328,12 @@ def delete_validator(validator_index: num):
 # Withdraw deposited ether
 def withdraw(validator_index: num):
     # heck that we can withdraw
-    assert self.current_epoch >= self.dynasty_start_epoch[self.validators[validator_index].dynasty_end]
+    # assert self.current_epoch >= self.dynasty_start_epoch[self.validators[validator_index].dynasty_end]
+    assert self.current_epoch >= self.dynasty_start_epoch[self.validators[validator_index].dynasty_end] + 1
     # Withdraw
-    send(self.validators[validator_index].withdrawal_addr, self.get_deposit_size(validator_index))
+    # send(self.validators[validator_index].withdrawal_addr, self.get_deposit_size(validator_index))
+    send(self.validators[validator_index].withdrawal_addr,
+            self.get_deposit_size_in(validator_index, self.dynasty_start_epoch[self.validators[validator_index].dynasty_end + 1]))
     self.delete_validator(validator_index)
 
 # Helper functions that clients can call to know what to prepare and commit
@@ -481,7 +486,7 @@ def commit(commit_msg: bytes <= 1024):
     assert self.validators[validator_index].prev_commit_epoch == prev_commit_epoch
     assert prev_commit_epoch < epoch
     self.validators[validator_index].prev_commit_epoch = epoch
-    this_validators_deposit = self.validators[validator_index].deposit
+    # this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the blockhash is correct
     if ancestry_hash == self.ancestry_hashes[epoch]:
         reward = floor(deposit_size * self.current_penalty_factor[epoch])
@@ -527,7 +532,10 @@ def double_prepare_slash(prepare1: bytes <= 1000, prepare2: bytes <= 1000):
     # Check that they're not the same message
     assert sighash1 != sighash2
     # Delete the offending validator, and give a 4% "finder's fee"
-    validator_deposit = self.get_deposit_size(validator_index)
+    if self.validators[validator_index].dynasty_end + 1 >= self.dynasty:
+        validator_deposit = self.get_deposit_size(validator_index)
+    else:
+        validator_deposit = self.get_deposit_size_in(validator_index, self.dynasty_start_epoch[self.validators[validator_index].dynasty_end + 1])
     send(msg.sender, validator_deposit / 25)
     self.total_destroyed += validator_deposit * 24 / 25
     #self.total_deposits[self.dynasty] -= (validator_deposit - validator_deposit / 25)
@@ -556,7 +564,10 @@ def prepare_commit_inconsistency_slash(prepare_msg: bytes <= 1024, commit_msg: b
     # Check that the prepare is newer than the commit
     assert commit_epoch < prepare_epoch
     # Delete the offending validator, and give a 4% "finder's fee"
-    validator_deposit = self.get_deposit_size(validator_index)
+    if self.validators[validator_index].dynasty_end + 1 >= self.dynasty:
+        validator_deposit = self.get_deposit_size(validator_index)
+    else:
+        validator_deposit = self.get_deposit_size_in(validator_index, self.dynasty_start_epoch[self.validators[validator_index].dynasty_end + 1])
     send(msg.sender, validator_deposit / 25)
     self.total_destroyed += validator_deposit * 24 / 25
     #self.total_deposits[self.dynasty] -= validator_deposit
