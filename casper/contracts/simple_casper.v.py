@@ -44,7 +44,7 @@ consensus_messages: public({
     # How many prepares are there for this hash (hash of message hash + view source) from the current dynasty
     cur_dyn_prepares: decimal(wei / m)[bytes32],
     # Bitmap of which validator IDs have already prepared
-    prepare_bitmap: num256[num][bytes32],
+    # prepare_bitmap: num256[num][bytes32],
     # From the previous dynasty
     prev_dyn_prepares: decimal(wei / m)[bytes32],
     # Is a prepare referencing the given ancestry hash justified?
@@ -54,6 +54,12 @@ consensus_messages: public({
     # And from the previous dynasty
     prev_dyn_commits: decimal(wei / m)[bytes32],
 }[num]) # index: epoch
+
+# Bitmap of which validator IDs have prepared in each epoch
+prepare_bitmap: num256[num][num]
+
+# Bitmap of which validator IDs have committed in each epoch
+commit_bitmap: num256[num][num]
 
 # Ancestry hashes for each epoch
 ancestry_hashes: public(bytes32[num])
@@ -107,7 +113,7 @@ base_interest_factor: public(decimal)
 base_penalty_factor: public(decimal)
 
 # Current penalty factor
-current_penalty_factor: public(decimal)
+current_penalty_factor: public(decimal[num])
 
 # Have I already been initialized?
 initialized: bool
@@ -181,7 +187,7 @@ def initialize_epoch(epoch: num):
     BIR = self.base_interest_factor / sqrt
     # Base penalty rate
     BP = BIR + self.base_penalty_factor * log_dist
-    self.current_penalty_factor = BP
+    self.current_penalty_factor[epoch % 256] = BP
     # Calculate interest rate for this epoch
     if self.total_curdyn_deposits > 0 and self.total_prevdyn_deposits > 0:
         # Fraction that prepared
@@ -276,6 +282,22 @@ def logout(logout_msg: bytes <= 1024):
 def get_deposit_size(validator_index: num) -> num(wei):
     return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
 
+# Get the deposit of specific epoch(past 256 epochs)
+@constant
+def get_deposit_in(validator_index: num, target_epoch: num) -> decimal(wei/m):
+    current_deposit = self.validators[validator_index].deposit * 1.0
+    # counting deposit backward, starting from current epoch
+    for i in range(256):
+        if i == (self.current_epoch - target_epoch):
+            break
+        if bitwise_and(self.commit_bitmap[(self.current_epoch - i) % 256][validator_index / 256],
+                       shift(as_num256(1), validator_index % 256)):
+            current_deposit = current_deposit / (1 + self.current_penalty_factor[(self.current_epoch - i) % 256])
+        if bitwise_and(self.prepare_bitmap[(self.current_epoch - i) % 256][validator_index / 256],
+                       shift(as_num256(1), validator_index % 256)):
+            current_deposit = current_deposit / (1 + self.current_penalty_factor[(self.current_epoch - i) % 256] * 2)
+    return current_deposit
+
 @constant
 def get_total_curdyn_deposits() -> wei_value:
     return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
@@ -356,7 +378,8 @@ def prepare(prepare_msg: bytes <= 1024):
     # Check the signature
     assert extract32(raw_call(self.validators[validator_index].addr, concat(sighash, sig), gas=500000, outsize=32), 0) == as_bytes32(1)
     # Check that this prepare has not yet been made
-    assert not bitwise_and(self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256],
+    # assert not bitwise_and(self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256],
+    assert not bitwise_and(self.prepare_bitmap[epoch % 256][validator_index / 256],
                            shift(as_num256(1), validator_index % 256))
     # Check that we are at least (epoch length / 4) blocks into the epoch
     # assert block.number % self.epoch_length >= self.epoch_length / 4
@@ -372,17 +395,21 @@ def prepare(prepare_msg: bytes <= 1024):
     assert in_current_dynasty or in_prev_dynasty
     # Check that the prepare is on top of a justified prepare
     assert self.consensus_messages[source_epoch].ancestry_hash_justified[source_ancestry_hash]
+    # Check that the epoch in current or previous dynasty
+    assert epoch >= self.dynasty_start_epoch[self.dynasty - 1]
     # This validator's deposit size
-    deposit_size = self.validators[validator_index].deposit
+    # deposit_size = self.validators[validator_index].deposit
+    deposit_size = self.get_deposit_in(validator_index, epoch)
     # Check that we have not yet prepared for this epoch
     # Pay the reward if the prepare was submitted in time and the prepare is preparing the correct data
     if (self.current_epoch == epoch and self.ancestry_hashes[epoch] == ancestry_hash) and \
             (self.expected_source_epoch == source_epoch and self.ancestry_hashes[self.expected_source_epoch] == source_ancestry_hash):
-        reward = floor(deposit_size * self.current_penalty_factor * 2)
+        reward = floor(deposit_size * self.current_penalty_factor[epoch % 256] * 2)
         self.proc_reward(validator_index, reward)
-    # Can't prepare for this epoch again
-    self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256] = \
-        bitwise_or(self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256],
+        # Can't prepare for this epoch again
+        # self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256] = \
+        self.prepare_bitmap[epoch % 256][validator_index / 256] = \
+            bitwise_or(self.prepare_bitmap[epoch % 256][validator_index / 256],
                    shift(as_num256(1), validator_index % 256))
     # self.validators[validator_index].max_prepared = epoch
     # Record that this prepare took place
@@ -400,7 +427,7 @@ def prepare(prepare_msg: bytes <= 1024):
             prevdyn_prepares >= self.total_prevdyn_deposits * 2 / 3) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
         self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash] = True
-        if ancestry_hash == self.ancestry_hashes[epoch]:
+        if ancestry_hash == self.ancestry_hashes[epoch] and epoch == self.current_epoch:
             self.main_hash_justified = True
     raw_log([self.prepare_log_topic], prepare_msg)
 
@@ -455,11 +482,15 @@ def commit(commit_msg: bytes <= 1024):
     assert self.validators[validator_index].prev_commit_epoch == prev_commit_epoch
     assert prev_commit_epoch < epoch
     self.validators[validator_index].prev_commit_epoch = epoch
-    this_validators_deposit = self.validators[validator_index].deposit
+    # this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the blockhash is correct
     if ancestry_hash == self.ancestry_hashes[epoch]:
-        reward = floor(deposit_size * self.current_penalty_factor)
+        reward = floor(deposit_size * self.current_penalty_factor[epoch % 256])
         self.proc_reward(validator_index, reward)
+        # Record that validator has committed in this epoch in time
+        self.commit_bitmap[epoch % 256][validator_index / 256] = \
+            bitwise_or(self.commit_bitmap[epoch % 256][validator_index / 256],
+                       shift(as_num256(1), validator_index % 256))
     # Can't commit for this epoch again
     # self.validators[validator_index].max_committed = epoch
     # Record that this commit took place
