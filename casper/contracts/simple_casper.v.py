@@ -288,7 +288,7 @@ def get_deposit_in(validator_index: num, target_epoch: num) -> decimal(wei/m):
     current_deposit = self.validators[validator_index].deposit * 1.0
     # counting deposit backward, starting from current epoch
     for i in range(256):
-        if i == (self.current_epoch - target_epoch):
+        if i == (self.current_epoch - target_epoch + 1):
             break
         if bitwise_and(self.commit_bitmap[(self.current_epoch - i) % 256][validator_index / 256],
                        shift(as_num256(1), validator_index % 256)):
