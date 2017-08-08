@@ -71,7 +71,7 @@ main_hash_justified: public(bool)
 main_hash_finalized: public(bool)
 
 # Value used to calculate the per-epoch fee that validators should be charged
-deposit_scale_factor: public(decimal(m)[num])
+deposit_scale_factor: public(decimal(m))
 
 # Length of an epoch in blocks
 epoch_length: public(num)
@@ -104,7 +104,7 @@ sighasher: address
 purity_checker: address
 
 # Reward for preparing or committing, as fraction of deposit size
-reward_factor: public(decimal)
+# reward_factor: public(decimal)
 
 # Base interest factor
 base_interest_factor: public(decimal)
@@ -144,7 +144,7 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     # Temporary backdoor for testing purposes (to allow recovering destroyed deposits)
     self.owner = _owner
     # Set deposit scale factor
-    self.deposit_scale_factor[0] = 100.0
+    self.deposit_scale_factor = 100.0
     # Start dynasty counter at 0
     self.dynasty = 0
     # Initialize the epoch counter
@@ -171,7 +171,7 @@ def initialize_epoch(epoch: num):
     assert epoch <= computed_current_epoch and epoch == self.current_epoch + 1
     # Compute square root factor
     ether_deposited_as_number = floor(max(self.total_prevdyn_deposits, self.total_curdyn_deposits) * 
-                                      self.deposit_scale_factor[epoch - 1] / as_wei_value(1, ether)) + 1
+                                      self.deposit_scale_factor / as_wei_value(1, ether)) + 1
     sqrt = ether_deposited_as_number / 2.0
     for i in range(20):
         sqrt = (sqrt + (ether_deposited_as_number / sqrt)) / 2
@@ -222,7 +222,7 @@ def initialize_epoch(epoch: num):
     # Set the epoch number
     self.current_epoch = epoch
     # Adjust counters for interest
-    self.deposit_scale_factor[epoch] = self.deposit_scale_factor[epoch - 1] * resize_factor
+    self.deposit_scale_factor = self.deposit_scale_factor * resize_factor
     # Increment the dynasty (if there are no validators yet, then all hashes finalize)
     if self.main_hash_finalized:
         self.dynasty += 1
@@ -245,7 +245,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
     assert self.current_epoch == block.number / self.epoch_length
     assert extract32(raw_call(self.purity_checker, concat('\xa1\x90>\xab', as_bytes32(validation_addr)), gas=500000, outsize=32), 0) != as_bytes32(0)
     self.validators[self.nextValidatorIndex] = {
-        deposit: msg.value / self.deposit_scale_factor[self.current_epoch],
+        deposit: msg.value / self.deposit_scale_factor,
         dynasty_start: self.dynasty + 2,
         dynasty_end: 1000000000000000000000000000000,
         addr: validation_addr,
@@ -253,7 +253,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
         prev_commit_epoch: 0,
     }
     self.nextValidatorIndex += 1
-    self.second_next_dynasty_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
+    self.second_next_dynasty_wei_delta += msg.value / self.deposit_scale_factor
 
 # Log in or log out from the validator set. A logged out validator can log
 # back in later, if they do not log in for an entire withdrawal period,
@@ -280,7 +280,7 @@ def logout(logout_msg: bytes <= 1024):
 # Gets the current deposit size
 @constant
 def get_deposit_size(validator_index: num) -> num(wei):
-    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
+    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor)
 
 # Get the deposit of specific epoch(past 256 epochs)
 @constant
@@ -300,11 +300,11 @@ def get_deposit_in(validator_index: num, target_epoch: num) -> decimal(wei/m):
 
 @constant
 def get_total_curdyn_deposits() -> wei_value:
-    return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
+    return floor(self.total_curdyn_deposits * self.deposit_scale_factor)
 
 @constant
 def get_total_prevdyn_deposits() -> wei_value:
-    return floor(self.total_prevdyn_deposits * self.deposit_scale_factor[self.current_epoch])
+    return floor(self.total_prevdyn_deposits * self.deposit_scale_factor)
 
 # Removes a validator from the validator pool
 @internal
