@@ -193,8 +193,8 @@ def initialize_epoch(epoch: num):
         # Fraction that prepared
         sourcing_hash = sha3(concat(as_bytes32(epoch-1),
                                     self.ancestry_hashes[epoch-1],
-                                    as_bytes32(self.expected_source_epoch[epoch-1]),
-                                    self.ancestry_hashes[self.expected_source_epoch[epoch-1]]))
+                                    as_bytes32(self.expected_source_epoch[(epoch-1) % 256]),
+                                    self.ancestry_hashes[self.expected_source_epoch[(epoch-1) % 256]]))
         cur_prepare_frac = self.consensus_messages[epoch - 1].cur_dyn_prepares[sourcing_hash] / self.total_curdyn_deposits
         prev_prepare_frac = self.consensus_messages[epoch - 1].prev_dyn_prepares[sourcing_hash] / self.total_prevdyn_deposits
         non_prepare_frac = 1 - min(cur_prepare_frac, prev_prepare_frac)
@@ -235,7 +235,7 @@ def initialize_epoch(epoch: num):
     # Compute new ancestry hash, as well as expected source epoch and hash
     self.ancestry_hashes[epoch] = sha3(concat(self.ancestry_hashes[epoch - 1], blockhash(epoch * self.epoch_length - 1)))
     if self.main_hash_justified:
-        self.expected_source_epoch[epoch] = epoch - 1
+        self.expected_source_epoch[epoch % 256] = epoch - 1
     self.main_hash_justified = False
     self.main_hash_finalized = False
 
@@ -293,7 +293,7 @@ def get_deposit_in(validator_index: num, target_epoch: num) -> decimal(wei/m):
         if bitwise_and(self.commit_bitmap[(self.current_epoch - i) % 256][validator_index / 256],
                        shift(as_num256(1), validator_index % 256)):
             current_deposit = current_deposit / (1 + self.current_penalty_factor[(self.current_epoch - i) % 256])
-        source_epoch = self.expected_source_epoch[self.current_epoch - i]
+        source_epoch = self.expected_source_epoch[(self.current_epoch - i) % 256]
         sourcing_hash = sha3(concat(as_bytes32(self.current_epoch - i), self.ancestry_hashes[self.current_epoch - i],
                                 as_bytes32(source_epoch), self.ancestry_hashes[source_epoch]))
         if bitwise_and(self.consensus_messages[self.current_epoch - i].prepare_bitmap[sourcing_hash][validator_index / 256],
@@ -339,11 +339,11 @@ def get_recommended_ancestry_hash() -> bytes32:
 
 @constant
 def get_recommended_source_epoch(epoch: num) -> num:
-    return self.expected_source_epoch[epoch]
+    return self.expected_source_epoch[epoch % 256]
 
 @constant
 def get_recommended_source_ancestry_hash() -> bytes32:
-    return self.ancestry_hashes[self.expected_source_epoch[self.current_epoch]]
+    return self.ancestry_hashes[self.expected_source_epoch[self.current_epoch % 256]]
 
 # Reward the given validator, and reflect this in total deposit figured
 def proc_reward(validator_index: num, reward: num(wei/m)):
@@ -405,7 +405,7 @@ def prepare(prepare_msg: bytes <= 1024):
     # Check that we have not yet prepared for this epoch
     # Pay the reward if the prepare was submitted in time and the prepare is preparing the correct data
     if (self.current_epoch == epoch and self.ancestry_hashes[epoch] == ancestry_hash) and \
-            (self.expected_source_epoch[epoch] == source_epoch and self.ancestry_hashes[self.expected_source_epoch[epoch]] == source_ancestry_hash):
+            (self.expected_source_epoch[epoch % 256] == source_epoch and self.ancestry_hashes[self.expected_source_epoch[epoch % 256]] == source_ancestry_hash):
         reward = floor(deposit_size * self.current_penalty_factor[epoch % 256] * 2)
         self.proc_reward(validator_index, reward)
         # Can't prepare for this epoch again
@@ -436,8 +436,8 @@ def prepare(prepare_msg: bytes <= 1024):
 def get_main_hash_prepared_frac() -> decimal:
     sourcing_hash = sha3(concat(as_bytes32(self.current_epoch),
                                 self.ancestry_hashes[self.current_epoch],
-                                as_bytes32(self.expected_source_epoch[self.current_epoch]),
-                                self.ancestry_hashes[self.expected_source_epoch[self.current_epoch]]))
+                                as_bytes32(self.expected_source_epoch[self.current_epoch % 256]),
+                                self.ancestry_hashes[self.expected_source_epoch[self.current_epoch % 256]]))
     return min(self.consensus_messages[self.current_epoch].cur_dyn_prepares[sourcing_hash] / self.total_curdyn_deposits,
                self.consensus_messages[self.current_epoch].prev_dyn_prepares[sourcing_hash] / self.total_prevdyn_deposits)
 
