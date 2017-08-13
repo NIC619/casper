@@ -302,17 +302,17 @@ for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i),
 
 assert casper.get_main_hash_finalized()
 assert casper.get_main_hash_committed_frac() >= 0.667
-# print("\nVerify get_deposit_in function...")
-# for i in range(3, 14):
-#     assert deposit_snapshot[i][0] == casper.get_deposit_in(0, i)
-#     # print("Actual deposit of validator#%d in epoch %d:" % (0, i), deposit_snapshot[i][0])
-#     # print("Deposit derived by get_deposit_in:", casper.get_deposit_in(0, i), "\n")
-# for i in range(11, finalizing_epoch+1):
-#     # print("\nin epoch", i)
-#     for j in range(1, 5):
-#         # print("Actual deposit of validator#%d:" % (j), deposit_snapshot[i][j])
-#         # print("Deposit derived by get_deposit_in:", casper.get_deposit_in(j, i))
-#         assert abs(deposit_snapshot[i][j] - casper.get_deposit_in(j, i)) < 0.000000000001 * 10 ** 18
+print("\nVerify get_deposit_in function...")
+for i in range(3, 14):
+    assert deposit_snapshot[i][0] == casper.get_deposit_in(0, i)
+    # print("Actual deposit of validator#%d in epoch %d:" % (0, i), deposit_snapshot[i][0])
+    # print("Deposit derived by get_deposit_in:", casper.get_deposit_in(0, i), "\n")
+for i in range(11, finalizing_epoch+1):
+    # print("\nin epoch", i)
+    for j in range(1, 5):
+        # print("Actual deposit of validator#%d:" % (j), deposit_snapshot[i][j])
+        # print("Deposit derived by get_deposit_in:", casper.get_deposit_in(j, i))
+        assert abs(deposit_snapshot[i][j] - casper.get_deposit_in(j, i)) < 0.000000000001 * 10 ** 18
 
 print("\nTest chain re-org")
 print("Assume validator#1 commit in epoch", casper.get_current_epoch() + 1)
