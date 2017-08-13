@@ -94,7 +94,7 @@ assert casper.get_total_prevdyn_deposits() == 0
 
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 print("Penalty factor: %.8f" % (casper.get_current_penalty_factor(_e)))
 # Send a prepare message
 print('pre deposit', casper.get_deposit_size(0), casper.get_total_curdyn_deposits())
@@ -128,7 +128,7 @@ print("Previous dynasty deposit ", casper.get_total_prevdyn_deposits(), ", curre
 print("\nFourth epoch initialized, dynasty increased as expected")
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 # Send a prepare message
 print('pre deposit', casper.get_deposit_size(0), casper.get_total_curdyn_deposits())
 assert casper.get_deposit_size(0) == casper.get_total_curdyn_deposits()
@@ -149,7 +149,7 @@ print('pre deposit', casper.get_deposit_size(0), casper.get_total_curdyn_deposit
 assert casper.get_total_curdyn_deposits() == casper.get_deposit_size(0)
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 # Test the NO_DBL_PREPARE slashing condition
 p1 = mk_prepare(0, _e, _a, _se, _sa, t.k1)
 p2 = mk_prepare(0, _e, _sa, _se, _sa, t.k1)
@@ -188,7 +188,7 @@ print("Non-finalization losses (third epoch): %.4f" % (1 - ds_3_non_finalized / 
 assert (ds_2_non_finalized - ds_3_non_finalized) > (ds_0_non_finalized - ds_1_non_finalized)
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 print("Deposit before prepare ", casper.get_deposit_size(0))
 p8 = mk_prepare(0, _e, _a, _se, _sa, t.k1)
 casper.prepare(p8)
@@ -215,7 +215,7 @@ print("induct four more validators")
 assert casper.get_deposit_size(0) == casper.get_total_curdyn_deposits()
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 p9 = mk_prepare(0, _e, _a, _se, _sa, t.k1)
 casper.prepare(p9)
 c9 = mk_commit(0, _e, _a, 8, t.k1)
@@ -225,7 +225,7 @@ casper.initialize_epoch(10)
 print("\nNineth epoch prepared and committed, initialize tenth epoch")
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 p10 = mk_prepare(0, _e, _a, _se, _sa, t.k1)
 casper.prepare(p10)
 c10 = mk_commit(0, _e, _a, 9, t.k1)
@@ -237,7 +237,7 @@ assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn
 print("Validator induction works")
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in zip([0,1,2,3], [t.k1, t.k2, t.k3, t.k4])]:
     casper.prepare(prepare)
 assert casper.get_main_hash_justified()
@@ -255,7 +255,7 @@ assert casper.get_deposit_size(4) < \
 
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in zip([0,1,2,3], [t.k1, t.k2, t.k3, t.k4])]:
     casper.prepare(prepare)
 assert casper.get_main_hash_justified()
@@ -272,7 +272,7 @@ assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_prevdy
 
 _e, _a, _se, _sa = \
     casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+    casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
 for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in zip([0,1,2,3], [t.k1, t.k2, t.k3, t.k4])]:
     casper.prepare(prepare)
 assert casper.get_main_hash_justified()
@@ -294,7 +294,7 @@ for i in range(15, 100):
     casper.initialize_epoch(i)
     _e, _a, _se, _sa = \
         casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-        casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+        casper.get_recommended_source_epoch(casper.get_current_epoch()), casper.get_recommended_source_ancestry_hash()
     for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in zip([1,2], [t.k2, t.k3])]:
         casper.prepare(prepare)
     print(casper.get_main_hash_prepared_frac())
