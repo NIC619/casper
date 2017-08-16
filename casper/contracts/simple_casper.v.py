@@ -22,16 +22,19 @@ nextValidatorIndex: public(num)
 dynasty: public(num)
 
 # Amount of wei added to the total deposits in the next dynasty
-next_dynasty_wei_delta: public(decimal(wei / m))
+next_dynasty_add_wei_delta: public(decimal(wei / m))
 
 # Amount of wei added to the total deposits in the dynasty after that
-second_next_dynasty_wei_delta: public(decimal(wei / m))
+second_next_dynasty_add_wei_delta: public(decimal(wei / m))
+
+# Amount of wei subtracted from the total deposits in the next dynasty
+next_dynasty_rmv_wei_delta: public(decimal(wei / m))
+
+# Amount of wei subtracted from the total deposits in the dynasty after that
+second_next_dynasty_rmv_wei_delta: public(decimal(wei / m))
 
 # Total deposits in the current dynasty
 total_curdyn_deposits: decimal(wei / m)
-
-# Total deposits in the previous dynasty
-total_prevdyn_deposits: decimal(wei / m)
 
 # Mapping of dynasty to start epoch of that dynasty
 dynasty_start_epoch: public(num[num])
@@ -46,13 +49,11 @@ consensus_messages: public({
     # Bitmap of which validator IDs have already prepared
     prepare_bitmap: num256[num][bytes32],
     # From the previous dynasty
-    prev_dyn_prepares: decimal(wei / m)[bytes32],
+    # prev_dyn_prepares: decimal(wei / m)[bytes32],
     # Is a prepare referencing the given ancestry hash justified?
     ancestry_hash_justified: bool[bytes32],
     # How many commits are there for this hash
     cur_dyn_commits: decimal(wei / m)[bytes32],
-    # And from the previous dynasty
-    prev_dyn_commits: decimal(wei / m)[bytes32],
 }[num]) # index: epoch
 
 # Ancestry hashes for each epoch
@@ -118,6 +119,9 @@ prepare_log_topic: bytes32
 # Log topic for commit
 commit_log_topic: bytes32
 
+# Rotation limit
+validator_rotate_limit: public(decimal)
+
 # Debugging
 latest_npf: public(decimal)
 latest_ncf: public(decimal)
@@ -150,10 +154,11 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     # self.consensus_messages[0].committed = True
     # Set initial total deposit counter
     self.total_curdyn_deposits = 0
-    self.total_prevdyn_deposits = 0
     # Constants that affect interest rates and penalties
     self.base_interest_factor = _base_interest_factor
     self.base_penalty_factor = _base_penalty_factor
+    # Validator swap in/out limit
+    self.validator_rotate_limit = 0.05
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
     self.commit_log_topic = sha3("commit()")
@@ -164,8 +169,7 @@ def initialize_epoch(epoch: num):
     computed_current_epoch = block.number / self.epoch_length
     assert epoch <= computed_current_epoch and epoch == self.current_epoch + 1
     # Compute square root factor
-    ether_deposited_as_number = floor(max(self.total_prevdyn_deposits, self.total_curdyn_deposits) * 
-                                      self.deposit_scale_factor[epoch - 1] / as_wei_value(1, ether)) + 1
+    ether_deposited_as_number = floor(self.total_curdyn_deposits * self.deposit_scale_factor[epoch - 1] / as_wei_value(1, ether)) + 1
     sqrt = ether_deposited_as_number / 2.0
     for i in range(20):
         sqrt = (sqrt + (ether_deposited_as_number / sqrt)) / 2
@@ -183,19 +187,17 @@ def initialize_epoch(epoch: num):
     BP = BIR + self.base_penalty_factor * log_dist
     self.current_penalty_factor = BP
     # Calculate interest rate for this epoch
-    if self.total_curdyn_deposits > 0 and self.total_prevdyn_deposits > 0:
+    if self.total_curdyn_deposits > 0:
         # Fraction that prepared
         sourcing_hash = sha3(concat(as_bytes32(epoch-1),
                                     self.ancestry_hashes[epoch-1],
                                     as_bytes32(self.expected_source_epoch),
                                     self.ancestry_hashes[self.expected_source_epoch]))
         cur_prepare_frac = self.consensus_messages[epoch - 1].cur_dyn_prepares[sourcing_hash] / self.total_curdyn_deposits
-        prev_prepare_frac = self.consensus_messages[epoch - 1].prev_dyn_prepares[sourcing_hash] / self.total_prevdyn_deposits
-        non_prepare_frac = 1 - min(cur_prepare_frac, prev_prepare_frac)
+        non_prepare_frac = 1 - cur_prepare_frac
         # Fraction that committed
         cur_commit_frac = self.consensus_messages[epoch - 1].cur_dyn_commits[self.ancestry_hashes[epoch - 1]] / self.total_curdyn_deposits
-        prev_commit_frac = self.consensus_messages[epoch - 1].prev_dyn_commits[self.ancestry_hashes[epoch - 1]]/ self.total_prevdyn_deposits
-        non_commit_frac = 1 - min(cur_commit_frac, prev_commit_frac)
+        non_commit_frac = 1 - cur_commit_frac
         # Compute "interest" - base interest minus penalties for not preparing and not committing
         # If a validator prepares or commits, they pay this, but then get it back when rewarded
         # as part of the prepare or commit function
@@ -220,10 +222,11 @@ def initialize_epoch(epoch: num):
     # Increment the dynasty (if there are no validators yet, then all hashes finalize)
     if self.main_hash_finalized:
         self.dynasty += 1
-        self.total_prevdyn_deposits = self.total_curdyn_deposits
-        self.total_curdyn_deposits += self.next_dynasty_wei_delta
-        self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
-        self.second_next_dynasty_wei_delta = 0
+        self.total_curdyn_deposits += (self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta)
+        self.next_dynasty_add_wei_delta = self.second_next_dynasty_add_wei_delta
+        self.next_dynasty_rmv_wei_delta = self.second_next_dynasty_rmv_wei_delta
+        self.second_next_dynasty_add_wei_delta = 0
+        self.second_next_dynasty_rmv_wei_delta = 0
         self.dynasty_start_epoch[self.dynasty] = epoch
     self.dynasty_in_epoch[epoch] = self.dynasty
     # Compute new ancestry hash, as well as expected source epoch and hash
@@ -238,6 +241,11 @@ def initialize_epoch(epoch: num):
 def deposit(validation_addr: address, withdrawal_addr: address):
     assert self.current_epoch == block.number / self.epoch_length
     assert extract32(raw_call(self.purity_checker, concat('\xa1\x90>\xab', as_bytes32(validation_addr)), gas=500000, outsize=32), 0) != as_bytes32(0)
+    # Check if new deposit added surpass validator rotate limit
+    if self.total_curdyn_deposits > 0:
+        second_next_dynasty_update = msg.value / self.deposit_scale_factor[self.current_epoch] + self.second_next_dynasty_add_wei_delta + self.second_next_dynasty_rmv_wei_delta
+        next_dynasty_total_deposit = self.total_curdyn_deposits + self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta
+        assert second_next_dynasty_update / next_dynasty_total_deposit < self.validator_rotate_limit
     self.validators[self.nextValidatorIndex] = {
         deposit: msg.value / self.deposit_scale_factor[self.current_epoch],
         dynasty_start: self.dynasty + 2,
@@ -247,7 +255,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
         prev_commit_epoch: 0,
     }
     self.nextValidatorIndex += 1
-    self.second_next_dynasty_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
+    self.second_next_dynasty_add_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
 
 # Log in or log out from the validator set. A logged out validator can log
 # back in later, if they do not log in for an entire withdrawal period,
@@ -267,9 +275,13 @@ def logout(logout_msg: bytes <= 1024):
     assert extract32(raw_call(self.validators[validator_index].addr, concat(sighash, sig), gas=500000, outsize=32), 0) == as_bytes32(1)
     # Check that we haven't already withdrawn
     assert self.validators[validator_index].dynasty_end >= self.dynasty + 2
+    # Check if deposit withdrawed surpass validator rotate limit
+    second_next_dynasty_update = self.validators[validator_index].deposit + self.second_next_dynasty_add_wei_delta + self.second_next_dynasty_rmv_wei_delta
+    next_dynasty_total_deposit = self.total_curdyn_deposits + self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta
+    assert second_next_dynasty_update / next_dynasty_total_deposit < self.validator_rotate_limit
     # Set the end dynasty
     self.validators[validator_index].dynasty_end = self.dynasty + 2
-    self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
+    self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
 
 # Gets the current deposit size
 @constant
@@ -280,15 +292,11 @@ def get_deposit_size(validator_index: num) -> num(wei):
 def get_total_curdyn_deposits() -> wei_value:
     return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
 
-@constant
-def get_total_prevdyn_deposits() -> wei_value:
-    return floor(self.total_prevdyn_deposits * self.deposit_scale_factor[self.current_epoch])
-
 # Removes a validator from the validator pool
 @internal
 def delete_validator(validator_index: num):
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
-        self.next_dynasty_wei_delta -= self.validators[validator_index].deposit
+        self.next_dynasty_add_wei_delta -= self.validators[validator_index].deposit
     self.validators[validator_index] = {
         deposit: 0,
         dynasty_start: 0,
@@ -322,7 +330,6 @@ def get_recommended_source_ancestry_hash() -> bytes32:
 
 # Reward the given validator, and reflect this in total deposit figured
 def proc_reward(validator_index: num, reward: num(wei/m)):
-    start_epoch = self.dynasty_start_epoch[self.validators[validator_index].dynasty_start]
     self.validators[validator_index].deposit += reward
     ds = self.validators[validator_index].dynasty_start
     de = self.validators[validator_index].dynasty_end
@@ -330,13 +337,10 @@ def proc_reward(validator_index: num, reward: num(wei/m)):
     dp = dc - 1
     if ((ds <= dc) and (dc < de)):
         self.total_curdyn_deposits += reward
-    if ((ds <= dp) and (dp < de)):
-        self.total_prevdyn_deposits += reward
     if dc == de - 1:
-        self.next_dynasty_wei_delta -= reward
+        self.next_dynasty_add_wei_delta -= reward
     if dc == de - 2:
-        self.second_next_dynasty_wei_delta -= reward
-    
+        self.second_next_dynasty_add_wei_delta -= reward
 
 # Process a prepare message
 def prepare(prepare_msg: bytes <= 1024):
@@ -360,16 +364,9 @@ def prepare(prepare_msg: bytes <= 1024):
                            shift(as_num256(1), validator_index % 256))
     # Check that we are at least (epoch length / 4) blocks into the epoch
     # assert block.number % self.epoch_length >= self.epoch_length / 4
-    # Original starting dynasty of the validator; fail if before
-    ds = self.validators[validator_index].dynasty_start
-    # Ending dynasty of the current login period
-    de = self.validators[validator_index].dynasty_end
-    # Dynasty of the prepare
-    dc = self.dynasty_in_epoch[epoch]
-    dp = dc - 1
-    in_current_dynasty = ((ds <= dc) and (dc < de))
-    in_prev_dynasty = ((ds <= dp) and (dp < de))
-    assert in_current_dynasty or in_prev_dynasty
+    # Check if validator is eligible
+    assert self.dynasty_in_epoch[epoch] >= self.validators[validator_index].dynasty_start and \
+            self.dynasty_in_epoch[epoch] < self.validators[validator_index].dynasty_end
     # Check that the prepare is on top of a justified prepare
     assert self.consensus_messages[source_epoch].ancestry_hash_justified[source_ancestry_hash]
     # This validator's deposit size
@@ -386,18 +383,10 @@ def prepare(prepare_msg: bytes <= 1024):
                    shift(as_num256(1), validator_index % 256))
     # self.validators[validator_index].max_prepared = epoch
     # Record that this prepare took place
-    curdyn_prepares = self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash]
-    if in_current_dynasty:
-        curdyn_prepares += deposit_size
-        self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] = curdyn_prepares
-    prevdyn_prepares = self.consensus_messages[epoch].prev_dyn_prepares[sourcing_hash]
-    if in_prev_dynasty:
-        prevdyn_prepares += deposit_size
-        self.consensus_messages[epoch].prev_dyn_prepares[sourcing_hash] = prevdyn_prepares
+    self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] += deposit_size
     # If enough prepares with the same epoch_source and hash are made,
     # then the hash value is justified for commitment
-    if (curdyn_prepares >= self.total_curdyn_deposits * 2 / 3 and \
-            prevdyn_prepares >= self.total_prevdyn_deposits * 2 / 3) and \
+    if (self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] >= self.total_curdyn_deposits * 2 / 3) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
         self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash] = True
         if ancestry_hash == self.ancestry_hashes[epoch] and epoch == self.current_epoch:
@@ -410,14 +399,12 @@ def get_main_hash_prepared_frac() -> decimal:
                                 self.ancestry_hashes[self.current_epoch],
                                 as_bytes32(self.expected_source_epoch),
                                 self.ancestry_hashes[self.expected_source_epoch]))
-    return min(self.consensus_messages[self.current_epoch].cur_dyn_prepares[sourcing_hash] / self.total_curdyn_deposits,
-               self.consensus_messages[self.current_epoch].prev_dyn_prepares[sourcing_hash] / self.total_prevdyn_deposits)
+    return self.consensus_messages[self.current_epoch].cur_dyn_prepares[sourcing_hash] / self.total_curdyn_deposits
 
 @constant
 def get_main_hash_committed_frac() -> decimal:
     ancestry_hash = self.ancestry_hashes[self.current_epoch]
-    return min(self.consensus_messages[self.current_epoch].cur_dyn_commits[ancestry_hash] / self.total_curdyn_deposits,
-               self.consensus_messages[self.current_epoch].prev_dyn_commits[ancestry_hash] / self.total_prevdyn_deposits)
+    return self.consensus_messages[self.current_epoch].cur_dyn_commits[ancestry_hash] / self.total_curdyn_deposits
 
 # Process a commit message
 def commit(commit_msg: bytes <= 1024):
@@ -439,23 +426,15 @@ def commit(commit_msg: bytes <= 1024):
     # Check that the commit is justified
     assert self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]
     # Check that this validator was active in either the previous dynasty or the current one
-    # Original starting dynasty of the validator; fail if before
-    ds = self.validators[validator_index].dynasty_start
-    # Ending dynasty of the current login period
-    de = self.validators[validator_index].dynasty_end
-    # Dynasty of the prepare
-    dc = self.dynasty_in_epoch[epoch]
-    dp = dc - 1
-    in_current_dynasty = ((ds <= dc) and (dc < de))
-    in_prev_dynasty = ((ds <= dp) and (dp < de))
-    assert in_current_dynasty or in_prev_dynasty
+    # Check if validator is eligible
+    assert self.dynasty_in_epoch[epoch] >= self.validators[validator_index].dynasty_start and \
+            self.dynasty_in_epoch[epoch] < self.validators[validator_index].dynasty_end
     # This validator's deposit size
     deposit_size = self.validators[validator_index].deposit
     # Check that we have not yet committed for this epoch
     assert self.validators[validator_index].prev_commit_epoch == prev_commit_epoch
     assert prev_commit_epoch < epoch
     self.validators[validator_index].prev_commit_epoch = epoch
-    this_validators_deposit = self.validators[validator_index].deposit
     # Pay the reward if the blockhash is correct
     if ancestry_hash == self.ancestry_hashes[epoch]:
         reward = floor(deposit_size * self.current_penalty_factor)
@@ -463,13 +442,9 @@ def commit(commit_msg: bytes <= 1024):
     # Can't commit for this epoch again
     # self.validators[validator_index].max_committed = epoch
     # Record that this commit took place
-    if in_current_dynasty:
-        self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] += deposit_size
-    if in_prev_dynasty:
-        self.consensus_messages[epoch].prev_dyn_commits[ancestry_hash] += deposit_size
+    self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] += deposit_size
     # Record if sufficient commits have been made for the block to be finalized
-    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * 2 / 3 and \
-            self.consensus_messages[epoch].prev_dyn_commits[ancestry_hash] >= self.total_prevdyn_deposits * 2 / 3) and \
+    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * 2 / 3) and \
             ((not self.main_hash_finalized) and ancestry_hash == self.ancestry_hashes[epoch]):
         self.main_hash_finalized = True
     raw_log([self.commit_log_topic], commit_msg)
