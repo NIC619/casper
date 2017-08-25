@@ -48,8 +48,6 @@ consensus_messages: public({
     cur_dyn_prepares: decimal(wei / m)[bytes32],
     # Bitmap of which validator IDs have already prepared
     prepare_bitmap: num256[num][bytes32],
-    # From the previous dynasty
-    # prev_dyn_prepares: decimal(wei / m)[bytes32],
     # Is a prepare referencing the given ancestry hash justified?
     ancestry_hash_justified: bool[bytes32],
     # How many commits are there for this hash
