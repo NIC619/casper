@@ -386,7 +386,7 @@ def prepare(prepare_msg: bytes <= 1024):
     self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] += deposit_size
     # If enough prepares with the same epoch_source and hash are made,
     # then the hash value is justified for commitment
-    if (self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] >= self.total_curdyn_deposits * (2.0 / 3.0 - self.validator_rotate_limit)) and \
+    if (self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] >= self.total_curdyn_deposits * 2.0 / (3.0 - self.validator_rotate_limit)) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
         self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash] = True
         if ancestry_hash == self.ancestry_hashes[epoch] and epoch == self.current_epoch:
@@ -444,7 +444,7 @@ def commit(commit_msg: bytes <= 1024):
     # Record that this commit took place
     self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] += deposit_size
     # Record if sufficient commits have been made for the block to be finalized
-    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * (2.0 / 3.0 - self.validator_rotate_limit)) and \
+    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * 2.0 / (3.0 - self.validator_rotate_limit)) and \
             ((not self.main_hash_finalized) and ancestry_hash == self.ancestry_hashes[epoch]):
         self.main_hash_finalized = True
     raw_log([self.commit_log_topic], commit_msg)
