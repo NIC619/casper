@@ -294,6 +294,7 @@ for i in range(5):
 s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
 casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
+print("Epoch %d initialized" % (current_epoch))
 try:
     induct_validator(casper, t.k7, 5 * 10**18)
     success = True
@@ -332,7 +333,7 @@ current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
 # assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn_deposits()) < 5
 print("Validator induction works")
-key_pairs = list(zip([0,1,2,3,4,5], [t.k1, t.k2, t.k3, t.k4, t.k5, t.k6]))
+key_pairs = list(zip([2,3,4,5], [t.k3, t.k4, t.k5, t.k6]))
 
 # induct more validators
 # for i, k in key_pairs[2:-1]:
@@ -363,11 +364,11 @@ key_pairs = list(zip([0,1,2,3,4,5], [t.k1, t.k2, t.k3, t.k4, t.k5, t.k6]))
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
-for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs[2:]]:
+for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
     casper.prepare(prepare)
 assert casper.get_main_hash_justified()
 s.mine(1)
-for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs[2:]]:
+for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
     casper.commit(commit)
 assert casper.get_main_hash_finalized()
 for i in range(6):
@@ -398,21 +399,43 @@ print("LOGIN + LOGOUT VALIDATOR WITH DEPOSIT LESS THAN LIMIT SUCCEED")
 print("Epoch %d finalized with %.4f commits\n" % (current_epoch, 
                                                 casper.get_consensus_messages__cur_dyn_commits(current_epoch, _a) / \
                                                 (casper.get_total_curdyn_deposits()/casper.get_deposit_scale_factor(current_epoch))))
-assert False
 
 s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
 casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
-assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn_deposits()) < 5
+print("Epoch %d initialized" % (current_epoch))
+assert abs(sum(map(casper.get_deposit_size, range(6))) - casper.get_total_curdyn_deposits()) < 5
 # assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_prevdyn_deposits()) < 5
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
-for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs[:-1]]:
+for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
     casper.prepare(prepare)
 assert casper.get_main_hash_justified()
 s.mine(1)
-for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs[:-1]]:
+for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
+    casper.commit(commit)
+assert casper.get_main_hash_finalized()
+print("Epoch %d finalized with %.4f commits\n" % (current_epoch, 
+                                                casper.get_consensus_messages__cur_dyn_commits(current_epoch, _a) / \
+                                                (casper.get_total_curdyn_deposits()/casper.get_deposit_scale_factor(current_epoch))))
+
+key_pairs = list(zip([2,3,4,6], [t.k3, t.k4, t.k5, t.k7]))
+
+s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
+casper.initialize_epoch((current_epoch + 1))
+current_epoch = casper.get_current_epoch()
+print("Epoch %d initialized" % (current_epoch))
+assert abs(sum(map(casper.get_deposit_size, range(5))) + casper.get_deposit_size(6) - casper.get_total_curdyn_deposits()) < 5
+# assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
+_e, _a, _se, _sa = \
+    current_epoch, casper.get_recommended_ancestry_hash(), \
+    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
+    casper.prepare(prepare)
+assert casper.get_main_hash_justified()
+s.mine(1)
+for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
     casper.commit(commit)
 assert casper.get_main_hash_finalized()
 print("Epoch %d finalized with %.4f commits\n" % (current_epoch, 
@@ -422,33 +445,28 @@ print("Epoch %d finalized with %.4f commits\n" % (current_epoch,
 s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
 casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
-assert abs(sum(map(casper.get_deposit_size, range(6))) - casper.get_deposit_size(4) - casper.get_total_curdyn_deposits()) < 5
+print("Epoch %d initialized" % (current_epoch))
+assert abs(sum(map(casper.get_deposit_size, range(5))) + casper.get_deposit_size(6) - casper.get_total_curdyn_deposits()) < 5
 # assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
-assert False
-
-print("Verified post-deposit logouts")
-for i in range(15, 100):
-    s.mine(EPOCH_LENGTH * i - s.head_state.block_number)
-    casper.initialize_epoch(i)
-    _e, _a, _se, _sa = \
-        casper.get_current_epoch(), casper.get_recommended_ancestry_hash(), \
-        casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
-    for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in zip([1,2], [t.k2, t.k3])]:
-        casper.prepare(prepare)
-    print(casper.get_main_hash_prepared_frac())
-    assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_curdyn_deposits()) < 5
-    # assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
-    ovp = (casper.get_deposit_size(1) + casper.get_deposit_size(2)) / casper.get_total_curdyn_deposits()
-    print("Epoch %d, online validator portion %.4f" % (i, ovp))
-    if ovp >= 0.7:
-        assert casper.get_main_hash_justified()
-        break
-
-for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in zip([1,2], [t.k2, t.k3])]:
+_e, _a, _se, _sa = \
+    current_epoch, casper.get_recommended_ancestry_hash(), \
+    casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
+    casper.prepare(prepare)
+assert casper.get_main_hash_justified()
+s.mine(1)
+for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
     casper.commit(commit)
+assert casper.get_main_hash_finalized()
+print("Epoch %d finalized with %.4f commits\n" % (current_epoch, 
+                                                casper.get_consensus_messages__cur_dyn_commits(current_epoch, _a) / \
+                                                (casper.get_total_curdyn_deposits()/casper.get_deposit_scale_factor(current_epoch))))
+for i in range(7):
+    print("Deposit of validator %d in epoch %d: %.8f" % (i, current_epoch, casper.get_deposit_size(i)/utils.denoms.ether))
+
 
 assert casper.get_main_hash_finalized()
-assert casper.get_main_hash_committed_frac() >= 0.667
-print("Deposits of remaining validators: %d %d" % (casper.get_deposit_size(1), casper.get_deposit_size(2)))
-print("Deposits of offline validators: %d %d" % (casper.get_deposit_size(3), casper.get_deposit_size(4)))
+# assert casper.get_main_hash_committed_frac() >= 0.667
+# print("Deposits of remaining validators: %d %d" % (casper.get_deposit_size(1), casper.get_deposit_size(2)))
+# print("Deposits of offline validators: %d %d" % (casper.get_deposit_size(3), casper.get_deposit_size(4)))
 print("Tests passed")

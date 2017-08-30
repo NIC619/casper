@@ -308,7 +308,7 @@ def delete_validator(validator_index: num):
 
 # Withdraw deposited ether
 def withdraw(validator_index: num):
-    # heck that we can withdraw
+    # Check that we can withdraw
     assert self.dynasty >= self.validators[validator_index].dynasty_end + 1
     assert self.current_epoch >= self.dynasty_start_epoch[self.validators[validator_index].dynasty_end + 1] + self.withdrawal_delay
     # Withdraw
