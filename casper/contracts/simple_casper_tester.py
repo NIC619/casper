@@ -14,6 +14,7 @@ for i in range(9):
 alloc[t.a0] = {'balance': 10**22}
 alloc[t.a1] = {'balance': 10**22}
 s = t.Chain(alloc=alloc)
+s.chain.env.config['MIN_GAS_LIMIT'] = 4707787
 t.languages['viper'] = compiler.Compiler()
 t.gas_limit = 9999999
 t.STARTGAS = 2000000
@@ -68,9 +69,9 @@ def mk_logout(validator_index, epoch, key):
     return rlp.encode([validator_index, epoch, sig])
 
 def induct_validator(casper, key, value):
-    valcode_addr = s.tx(key, "", 0, mk_validation_code(utils.privtoaddr(key)))
-    assert utils.big_endian_to_int(s.tx(key, purity_checker_address, 0, ct.encode('submit', [valcode_addr]))) == 1
-    casper.deposit(valcode_addr, utils.privtoaddr(key), value=value)
+    valcode_addr = s.tx(key, "", 0, mk_validation_code(utils.privtoaddr(key)), startgas=200000)
+    assert utils.big_endian_to_int(s.tx(key, purity_checker_address, 0, ct.encode('submit', [valcode_addr]), startgas=200000)) == 1
+    casper.deposit(valcode_addr, utils.privtoaddr(key), value=value, startgas=200000)
 
 # Begin the test
 print("Starting tests\n")
@@ -325,7 +326,6 @@ s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
 casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
-s.mine(1)
 induct_validator(casper, t.k6, 3 * 10**18)
 print("Induct validator %d with 3 ether" % (casper.get_nextValidatorIndex() - 1))
 _e, _a, _se, _sa = \
@@ -397,9 +397,7 @@ except:
 assert not success
 print("LOGIN + LOGOUT VALIDATOR WITH DEPOSIT MORE THAN LIMIT FAIL")
 s.revert(snapshot)
-# s.mine(1)
 casper.logout(mk_logout(5, current_epoch, t.k6))
-s.mine(1)
 print("log out validator 5")
 induct_validator(casper, t.k7, 1 * 10**17)
 print("Induct validator %d with 0.1 ether" % (casper.get_nextValidatorIndex() - 1))
