@@ -139,7 +139,6 @@ casper.initialize_epoch(current_epoch + 1)
 current_epoch = casper.get_current_epoch()
 # Check that the dynasty increased as expected
 assert casper.get_dynasty() == 4
-# print(casper.get_total_prevdyn_deposits(), casper.get_total_curdyn_deposits())
 print("Epoch %d initialized, dynasty increased as expected" % (current_epoch))
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
@@ -249,7 +248,6 @@ current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
 print("Penalty factor in epoch %d: %.8f" % (current_epoch,casper.get_current_penalty_factor()))
 # print(casper.get_latest_npf(), casper.get_latest_ncf(), casper.get_latest_resize_factor())
-# print(casper.get_deposit_size(0), casper.get_current_penalty_factor())
 ds_after_finalize = sum(map(casper.get_deposit_size, range(5)))
 assert casper.get_latest_npf() < 0.1 and casper.get_latest_ncf() < 0.1
 assert ds_after_finalize > ds_4_non_finalized
@@ -258,9 +256,41 @@ print("Finalization gains: %.4f" % (ds_after_finalize / ds_4_non_finalized - 1))
 for i in range(5):
     print("Deposit of validator %d in epoch %d: %.8f" % (i, current_epoch, casper.get_deposit_size(i)/utils.denoms.ether))
 
-active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
-inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
-print("\nValidator 0 and 1 will now go off-line\n")
+old_active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
+print("Deposit of active validators: %.8f" % (old_active_validator_deposit / utils.denoms.ether))
+old_inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
+print("Deposit of inactive validators: %.8f" % (old_inactive_validator_deposit / utils.denoms.ether))
+
+# SCENARIO 1, HERE ATTACKER WILL NOT PREPARE
+# print("\nValidator 0 and 1 will now go off-line\n")
+# for i in range(current_epoch+1, 100):
+#     s.mine(EPOCH_LENGTH * i - s.head_state.block_number)
+#     casper.initialize_epoch(i)
+#     current_epoch = casper.get_current_epoch()
+#     _e, _a, _se, _sa = \
+#         current_epoch, casper.get_recommended_ancestry_hash(), \
+#         casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
+#     for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs[2:]]:
+#         casper.prepare(prepare)
+#     print("%.4f prepared in epoch %d" % (casper.get_main_hash_prepared_frac(), current_epoch))
+#     new_active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
+#     new_inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
+#     print("Active validators lose %.4f deposit in last epoch" % (1 - (new_active_validator_deposit / old_active_validator_deposit)))
+#     print("Inactive validators lose %.4f deposit in last epoch" % (1 - (new_inactive_validator_deposit / old_inactive_validator_deposit)))
+#     old_active_validator_deposit = new_active_validator_deposit
+#     old_inactive_validator_deposit = new_inactive_validator_deposit
+#     assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn_deposits()) < 5
+#     ovp = new_active_validator_deposit / casper.get_total_curdyn_deposits()
+#     print("Epoch %d, online validator portion %.4f" % (current_epoch, ovp))
+#     if ovp >= (2.0 / (3.0 - casper_config["validator_rotate_limit"])):
+#         assert casper.get_main_hash_justified()
+#         break
+# for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs[2:]]:
+#     casper.commit(commit)
+# assert casper.get_main_hash_finalized()
+
+# SCENARIO 2, HERE ATTACKER WILL PREPARE BUT NOT COMMIT
+print("\nValidator 0 and 1 will now only prepare but not commit\n")
 for i in range(current_epoch+1, 100):
     s.mine(EPOCH_LENGTH * i - s.head_state.block_number)
     casper.initialize_epoch(i)
@@ -268,24 +298,24 @@ for i in range(current_epoch+1, 100):
     _e, _a, _se, _sa = \
         current_epoch, casper.get_recommended_ancestry_hash(), \
         casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
-    for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs[2:]]:
+    for prepare in [mk_prepare(j, _e, _a, _se, _sa, k) for j, k in key_pairs]:
         casper.prepare(prepare)
-    print("%.4f prepared in epoch %d" % (casper.get_main_hash_prepared_frac(), current_epoch))
-    # assert not casper.get_main_hash_justified()
-    print("Active validators lose %.4f deposit in last epoch" % (1 - (sum(map(casper.get_deposit_size, range(2, 5))) / active_validator_deposit)))
-    print("Inactive validators lose %.4f deposit in last epoch" % (1 - (sum(map(casper.get_deposit_size, range(2))) / inactive_validator_deposit)))
-    active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
-    inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
+    for commit in [mk_commit(j, _e, _a, casper.get_validators__prev_commit_epoch(j), k) for j, k in key_pairs[2:]]:
+        casper.commit(commit)
+    print("%.4f committed in epoch %d" % (casper.get_main_hash_committed_frac(), current_epoch))
+    new_active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
+    new_inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
+    print("Active validators lose %.4f deposit in last epoch" % (1 - (new_active_validator_deposit / old_active_validator_deposit)))
+    print("Inactive validators lose %.4f deposit in last epoch" % (1 - (new_inactive_validator_deposit / old_inactive_validator_deposit)))
+    old_active_validator_deposit = new_active_validator_deposit
+    old_inactive_validator_deposit = new_inactive_validator_deposit
     assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn_deposits()) < 5
-    # assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
-    ovp = sum(map(casper.get_deposit_size, range(2, 5))) / casper.get_total_curdyn_deposits()
+    ovp = new_active_validator_deposit / casper.get_total_curdyn_deposits()
     print("Epoch %d, online validator portion %.4f" % (current_epoch, ovp))
-    if ovp >= 0.7:#(2.0 / (3.0 - casper_config["validator_rotate_limit"])):
-        assert casper.get_main_hash_justified()
+    if ovp >= (2.0 / (3.0 - casper_config["validator_rotate_limit"])):
+        assert casper.get_main_hash_finalized()
         break
-for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs[2:]]:
-    casper.commit(commit)
-assert casper.get_main_hash_finalized()
+
 print("\nWe can now finalize again with validator 2, 3 and 4\n")
 
 for i in range(5):
@@ -295,14 +325,7 @@ s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
 casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
-try:
-    induct_validator(casper, t.k7, 5 * 10**18)
-    success = True
-except:
-    success = False
-assert not success
 s.mine(1)
-print("INDUCT VALIDATOR WITH DEPOSIT MORE THAN LIMIT FAIL")
 induct_validator(casper, t.k6, 3 * 10**18)
 print("Induct validator %d with 3 ether" % (casper.get_nextValidatorIndex() - 1))
 _e, _a, _se, _sa = \
@@ -334,33 +357,6 @@ print("Epoch %d initialized" % (current_epoch))
 # assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_curdyn_deposits()) < 5
 print("Validator induction works")
 key_pairs = list(zip([2,3,4,5], [t.k3, t.k4, t.k5, t.k6]))
-
-# induct more validators
-# for i, k in key_pairs[2:-1]:
-#     if i < 4:
-#         induct_validator(casper, k, 10 * 10**18)
-#         print("Induct validator %d with 10 ether" % (casper.get_nextValidatorIndex() - 1))
-#     else:
-#         induct_validator(casper, k, 5 * 10**18)
-#         print("Induct validator %d with 5 ether" % (casper.get_nextValidatorIndex() - 1))
-#     for h in range(2):
-#         _e, _a, _se, _sa = \
-#             current_epoch, casper.get_recommended_ancestry_hash(), \
-#             casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
-#         for prepare in [mk_prepare(j, _e, _a, _se, _sa, _k) for j, _k in key_pairs if j < i]:
-#             casper.prepare(prepare)
-#         assert casper.get_main_hash_justified()
-#         s.mine(1)
-#         for commit in [mk_commit(j, _e, _a, casper.get_validators__prev_commit_epoch(j), _k) for j, _k in key_pairs if j < i]:
-#             casper.commit(commit)
-#         assert casper.get_main_hash_finalized()
-#         print('Prepare and Commit messages proccessed\n')
-#         s.mine(EPOCH_LENGTH * (current_epoch + 1) - s.head_state.block_number)
-#         casper.initialize_epoch((current_epoch + 1))
-#         current_epoch = casper.get_current_epoch()
-#         print("Epoch %d initialized" % (current_epoch))
-# casper.logout(mk_logout(0, 11, t.k1))
-
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
@@ -373,7 +369,16 @@ for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i),
 assert casper.get_main_hash_finalized()
 for i in range(6):
     print("Deposit of validator %d in epoch %d: %.8f" % (i, current_epoch, casper.get_deposit_size(i)/utils.denoms.ether))
-# print("Epoch %d finalized with 4/5 prepares/commits")
+snapshot = s.snapshot()
+try:
+    induct_validator(casper, t.k7, 10 * 10**18)
+    success = True
+except:
+    success = False
+assert not success
+s.revert(snapshot)
+# s.mine(1)
+print("INDUCT VALIDATOR WITH DEPOSIT MORE THAN LIMIT FAIL")
 try:
     casper.logout(mk_logout(0, current_epoch, t.k1))
     success = True
@@ -381,20 +386,23 @@ except:
     success = False
 assert not success
 print("LOGOUT VALIDATOR WITH DEPOSIT MORE THAN LIMIT FAIL")
-s.mine(1)
+s.revert(snapshot)
+# s.mine(1)
 try:
-    casper.logout(mk_logout(2, current_epoch, t.k6))
-    induct_validator(casper, t.k7, 2 * 10**18)
+    casper.logout(mk_logout(5, current_epoch, t.k6))
+    induct_validator(casper, t.k7, 5 * 10**18)
     success = True
 except:
     success = False
 assert not success
 print("LOGIN + LOGOUT VALIDATOR WITH DEPOSIT MORE THAN LIMIT FAIL")
-s.mine(1)
+s.revert(snapshot)
+# s.mine(1)
 casper.logout(mk_logout(5, current_epoch, t.k6))
+s.mine(1)
 print("log out validator 5")
-induct_validator(casper, t.k7, 1 * 10**18)
-print("Induct validator %d with 1 ether" % (casper.get_nextValidatorIndex() - 1))
+induct_validator(casper, t.k7, 1 * 10**17)
+print("Induct validator %d with 0.1 ether" % (casper.get_nextValidatorIndex() - 1))
 print("LOGIN + LOGOUT VALIDATOR WITH DEPOSIT LESS THAN LIMIT SUCCEED")
 print("Epoch %d finalized with %.4f commits\n" % (current_epoch, 
                                                 casper.get_consensus_messages__cur_dyn_commits(current_epoch, _a) / \
@@ -405,7 +413,6 @@ casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
 assert abs(sum(map(casper.get_deposit_size, range(6))) - casper.get_total_curdyn_deposits()) < 5
-# assert abs(sum(map(casper.get_deposit_size, range(5))) - casper.get_total_prevdyn_deposits()) < 5
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
@@ -427,7 +434,6 @@ casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
 assert abs(sum(map(casper.get_deposit_size, range(5))) + casper.get_deposit_size(6) - casper.get_total_curdyn_deposits()) < 5
-# assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
@@ -447,7 +453,6 @@ casper.initialize_epoch((current_epoch + 1))
 current_epoch = casper.get_current_epoch()
 print("Epoch %d initialized" % (current_epoch))
 assert abs(sum(map(casper.get_deposit_size, range(5))) + casper.get_deposit_size(6) - casper.get_total_curdyn_deposits()) < 5
-# assert abs(sum(map(casper.get_deposit_size, range(1, 5))) - casper.get_total_prevdyn_deposits()) < 5
 _e, _a, _se, _sa = \
     current_epoch, casper.get_recommended_ancestry_hash(), \
     casper.get_recommended_source_epoch(), casper.get_recommended_source_ancestry_hash()
