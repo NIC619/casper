@@ -16,7 +16,7 @@ validators: public({
 }[num])
 
 # Number of validators
-nextValidatorIndex: public(num)
+deposit_queue_end: public(num)
 
 # The current dynasty (validator set changes between dynasties)
 dynasty: public(num)
@@ -118,7 +118,13 @@ prepare_log_topic: bytes32
 commit_log_topic: bytes32
 
 # Rotation limit
-validator_rotate_limit: public(decimal)
+validator_rotate_limit: public(decimal(wei / m))
+
+# HEAD of deposit queue
+deposit_queue_head: public(num)
+
+# Unit m
+one_unit_of_m: decimal(m)
 
 # Debugging
 latest_npf: public(decimal)
@@ -132,7 +138,7 @@ def initiate(# Epoch length, delay in epochs for withdrawing
             # Base interest and base penalty factors
             _base_interest_factor: decimal, _base_penalty_factor: decimal,
             # Validator rotate limit
-            _validator_rotate_limit: decimal):
+            _validator_rotate_limit: wei_value):
     assert not self.initialized
     self.initialized = True
     # Epoch length
@@ -157,8 +163,9 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     # Constants that affect interest rates and penalties
     self.base_interest_factor = _base_interest_factor
     self.base_penalty_factor = _base_penalty_factor
+    self.one_unit_of_m = 1.0
     # Validator swap in/out limit
-    self.validator_rotate_limit = _validator_rotate_limit
+    self.validator_rotate_limit = _validator_rotate_limit / self.one_unit_of_m
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
     self.commit_log_topic = sha3("commit()")
@@ -225,7 +232,18 @@ def initialize_epoch(epoch: num):
         self.total_curdyn_deposits += (self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta)
         self.next_dynasty_add_wei_delta = self.second_next_dynasty_add_wei_delta
         self.next_dynasty_rmv_wei_delta = self.second_next_dynasty_rmv_wei_delta
-        self.second_next_dynasty_add_wei_delta = 0
+        # Choose validators from queue
+        new_deposit_amount = 0
+        for i in range(1000):
+            if (self.deposit_queue_end - self.deposit_queue_head > 0) and \
+                (self.validators[self.deposit_queue_head].deposit < self.validator_rotate_limit):
+                self.validators[self.deposit_queue_head].deposit = (self.validators[self.deposit_queue_head].deposit * self.one_unit_of_m) / self.deposit_scale_factor[self.current_epoch]
+                self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
+                self.deposit_queue_head += 1
+                self.second_next_dynasty_add_wei_delta += self.validators[self.deposit_queue_head].deposit
+            else:
+                break
+        # self.second_next_dynasty_add_wei_delta = 0
         self.second_next_dynasty_rmv_wei_delta = 0
         self.dynasty_start_epoch[self.dynasty] = epoch
     self.dynasty_in_epoch[epoch] = self.dynasty
@@ -236,26 +254,37 @@ def initialize_epoch(epoch: num):
     self.main_hash_justified = False
     self.main_hash_finalized = False
 
+# Gets the current deposit size
+@constant
+def get_deposit_size(validator_index: num) -> num(wei):
+    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
+
+@constant
+def get_total_curdyn_deposits() -> wei_value:
+    return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
+
 # Send a deposit to join the validator set
 @payable
 def deposit(validation_addr: address, withdrawal_addr: address):
     assert self.current_epoch == block.number / self.epoch_length
     assert extract32(raw_call(self.purity_checker, concat('\xa1\x90>\xab', as_bytes32(validation_addr)), gas=500000, outsize=32), 0) != as_bytes32(0)
-    # Check if new deposit added surpass validator rotate limit
-    if self.total_curdyn_deposits > 0:
-        second_next_dynasty_update = msg.value / self.deposit_scale_factor[self.current_epoch] + self.second_next_dynasty_add_wei_delta + self.second_next_dynasty_rmv_wei_delta
-        next_dynasty_total_deposit = self.total_curdyn_deposits + self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta
-        assert second_next_dynasty_update / next_dynasty_total_deposit < self.validator_rotate_limit
-    self.validators[self.nextValidatorIndex] = {
-        deposit: msg.value / self.deposit_scale_factor[self.current_epoch],
-        dynasty_start: self.dynasty + 2,
+    assert msg.value / self.one_unit_of_m < self.validator_rotate_limit
+    # Join the queue
+    self.validators[self.deposit_queue_end] = {
+        deposit: msg.value / self.one_unit_of_m,
+        dynasty_start: 1000000000000000000000000000000,
         dynasty_end: 1000000000000000000000000000000,
         addr: validation_addr,
         withdrawal_addr: withdrawal_addr,
         prev_commit_epoch: 0,
     }
-    self.nextValidatorIndex += 1
-    self.second_next_dynasty_add_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
+    self.deposit_queue_end += 1
+    # If there's no validators yet, 
+    if self.total_curdyn_deposits == 0:
+        self.validators[self.deposit_queue_end - 1].deposit = msg.value / self.deposit_scale_factor[self.current_epoch]
+        self.validators[self.deposit_queue_end - 1].dynasty_start = self.dynasty + 2
+        self.deposit_queue_head += 1
+        self.second_next_dynasty_add_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
 
 # Log in or log out from the validator set. A logged out validator can log
 # back in later, if they do not log in for an entire withdrawal period,
@@ -276,21 +305,10 @@ def logout(logout_msg: bytes <= 1024):
     # Check that we haven't already withdrawn
     assert self.validators[validator_index].dynasty_end >= self.dynasty + 2
     # Check if deposit withdrawed surpass validator rotate limit
-    second_next_dynasty_update = self.validators[validator_index].deposit + self.second_next_dynasty_add_wei_delta + self.second_next_dynasty_rmv_wei_delta
-    next_dynasty_total_deposit = self.total_curdyn_deposits + self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta
-    assert second_next_dynasty_update / next_dynasty_total_deposit < self.validator_rotate_limit
+    assert self.get_deposit_size(validator_index) < self.validator_rotate_limit * self.one_unit_of_m
     # Set the end dynasty
     self.validators[validator_index].dynasty_end = self.dynasty + 2
     self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
-
-# Gets the current deposit size
-@constant
-def get_deposit_size(validator_index: num) -> num(wei):
-    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
-
-@constant
-def get_total_curdyn_deposits() -> wei_value:
-    return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
 
 # Removes a validator from the validator pool
 @internal
@@ -388,7 +406,7 @@ def prepare(prepare_msg: bytes <= 1024):
     self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] += self.validators[validator_index].deposit
     # If enough prepares with the same epoch_source and hash are made,
     # then the hash value is justified for commitment
-    if (self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] >= self.total_curdyn_deposits * 2.0 / (3.0 - self.validator_rotate_limit)) and \
+    if (self.consensus_messages[epoch].cur_dyn_prepares[sourcing_hash] >= self.total_curdyn_deposits * 2/3) and \
             not self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash]:
         self.consensus_messages[epoch].ancestry_hash_justified[ancestry_hash] = True
         if ancestry_hash == self.ancestry_hashes[epoch] and epoch == self.current_epoch:
@@ -446,7 +464,7 @@ def commit(commit_msg: bytes <= 1024):
     # Record that this commit took place
     self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] += self.validators[validator_index].deposit
     # Record if sufficient commits have been made for the block to be finalized
-    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * 2.0 / (3.0 - self.validator_rotate_limit)) and \
+    if (self.consensus_messages[epoch].cur_dyn_commits[ancestry_hash] >= self.total_curdyn_deposits * 2/3) and \
             ((not self.main_hash_finalized) and ancestry_hash == self.ancestry_hashes[epoch]):
         self.main_hash_finalized = True
     raw_log([self.commit_log_topic], commit_msg)
