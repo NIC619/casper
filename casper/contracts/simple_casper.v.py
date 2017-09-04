@@ -15,9 +15,6 @@ validators: public({
     prev_commit_epoch: num
 }[num])
 
-# Number of validators including deposit queue
-deposit_queue_end: public(num)
-
 # The current dynasty (validator set changes between dynasties)
 dynasty: public(num)
 
@@ -120,8 +117,14 @@ commit_log_topic: bytes32
 # Rotation limit
 validator_rotate_limit: public(decimal(wei / m))
 
+# Deposit size ceiling
+deposit_size_ceiling: public(decimal(wei))
+
 # HEAD of deposit queue
 deposit_queue_head: public(num)
+
+# Number of validators including deposit queue
+deposit_queue_end: public(num)
 
 # Unit m
 one_unit_of_m: decimal(m)
@@ -137,8 +140,8 @@ def initiate(# Epoch length, delay in epochs for withdrawing
             _owner: address, _sighasher: address, _purity_checker: address,
             # Base interest and base penalty factors
             _base_interest_factor: decimal, _base_penalty_factor: decimal,
-            # Validator rotate limit
-            _validator_rotate_limit: wei_value):
+            # Validator rotate limit and deposit size ceiling
+            _validator_rotate_limit: wei_value, _deposit_size_ceiling: wei_value):
     assert not self.initialized
     self.initialized = True
     # Epoch length
@@ -170,6 +173,7 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     self.one_unit_of_m = 1.0
     # Validator swap in/out limit
     self.validator_rotate_limit = _validator_rotate_limit / self.one_unit_of_m
+    self.deposit_size_ceiling = _deposit_size_ceiling * 1.0
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
     self.commit_log_topic = sha3("commit()")
@@ -401,6 +405,8 @@ def prepare(prepare_msg: bytes <= 1024):
     if (self.current_epoch == epoch and self.ancestry_hashes[epoch] == ancestry_hash) and \
             (self.expected_source_epoch == source_epoch and self.ancestry_hashes[self.expected_source_epoch] == source_ancestry_hash):
         reward = floor(self.validators[validator_index].deposit * self.current_penalty_factor * 2)
+        if self.get_deposit_size(validator_index) + reward * self.deposit_scale_factor[self.current_epoch] > self.deposit_size_ceiling:
+            reward = floor(self.deposit_size_ceiling / self.deposit_scale_factor[self.current_epoch] - self.validators[validator_index].deposit)
         self.proc_reward(validator_index, reward)
     # Can't prepare for this epoch again
     self.consensus_messages[epoch].prepare_bitmap[sourcing_hash][validator_index / 256] = \
@@ -463,6 +469,8 @@ def commit(commit_msg: bytes <= 1024):
     # Pay the reward if the blockhash is correct
     if ancestry_hash == self.ancestry_hashes[epoch]:
         reward = floor(self.validators[validator_index].deposit * self.current_penalty_factor)
+        if self.get_deposit_size(validator_index) + reward * self.deposit_scale_factor[self.current_epoch] > self.deposit_size_ceiling:
+            reward = floor(self.deposit_size_ceiling / self.deposit_scale_factor[self.current_epoch] - self.validators[validator_index].deposit)
         self.proc_reward(validator_index, reward)
     # Can't commit for this epoch again
     # self.validators[validator_index].max_committed = epoch

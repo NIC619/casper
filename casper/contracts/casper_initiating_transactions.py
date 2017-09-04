@@ -13,7 +13,8 @@ casper_config = {
     "owner": utils.checksum_encode(a0), # Backdoor address
     "base_interest_factor": 0.02,
     "base_penalty_factor": 0.002,
-    "validator_rotate_limit": 25000 * utils.denoms.ether + 1 # Max amount of ether of one deposit
+    "validator_rotate_limit": 25000 * utils.denoms.ether + 1, # Max amount of ether of one deposit
+    "deposit_size_ceiling": 26800 * utils.denoms.ether + 1 # Max deposit size
 }
 
 viper_rlp_decoder_tx = rlp.hex_decode("0xf90237808506fc23ac00830330888080b902246102128061000e60003961022056600060007f010000000000000000000000000000000000000000000000000000000000000060003504600060c082121515585760f882121561004d5760bf820336141558576001905061006e565b600181013560f783036020035260005160f6830301361415585760f6820390505b5b368112156101c2577f010000000000000000000000000000000000000000000000000000000000000081350483602086026040015260018501945060808112156100d55760018461044001526001828561046001376001820191506021840193506101bc565b60b881121561014357608081038461044001526080810360018301856104600137608181141561012e5760807f010000000000000000000000000000000000000000000000000000000000000060018401350412151558575b607f81038201915060608103840193506101bb565b60c08112156101b857600182013560b782036020035260005160388112157f010000000000000000000000000000000000000000000000000000000000000060018501350402155857808561044001528060b6838501038661046001378060b6830301830192506020810185019450506101ba565bfe5b5b5b5061006f565b601f841315155857602060208502016020810391505b6000821215156101fc578082604001510182826104400301526020820391506101d8565b808401610420528381018161044003f350505050505b6000f31b2d4f", Transaction)
@@ -42,12 +43,12 @@ def mk_initializers(config, sender_privkey, starting_nonce=0):
         o.append(tx)
         nonce += 1
     # Casper initialization transaction
-    casper_tx = Transaction(nonce, gasprice, 4500000, b'', 0, casper_bytecode).sign(sender_privkey)
+    casper_tx = Transaction(nonce, gasprice, 5000000, b'', 0, casper_bytecode).sign(sender_privkey)
     # Casper initiate call (separate from initialization to save gas)
     initiate_args = casper_ct.encode('initiate', [
         config["epoch_length"], config["withdrawal_delay"], config["owner"], sig_hasher_address,
         purity_checker_address, config["base_interest_factor"], config["base_penalty_factor"],
-        config["validator_rotate_limit"]
+        config["validator_rotate_limit"], config["deposit_size_ceiling"]
     ])
     casper_initiate_tx = Transaction(nonce + 1, gasprice, 1000000, casper_tx.creates, 0, initiate_args).sign(sender_privkey)
     # Return list of transactions and Casper address
