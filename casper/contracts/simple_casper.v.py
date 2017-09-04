@@ -15,7 +15,7 @@ validators: public({
     prev_commit_epoch: num
 }[num])
 
-# Number of validators
+# Number of validators including deposit queue
 deposit_queue_end: public(num)
 
 # The current dynasty (validator set changes between dynasties)
@@ -163,6 +163,10 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     # Constants that affect interest rates and penalties
     self.base_interest_factor = _base_interest_factor
     self.base_penalty_factor = _base_penalty_factor
+    # Initialize queue
+    self.deposit_queue_head = 0
+    self.deposit_queue_end = 0
+    # Set base unit of m
     self.one_unit_of_m = 1.0
     # Validator swap in/out limit
     self.validator_rotate_limit = _validator_rotate_limit / self.one_unit_of_m
@@ -233,17 +237,18 @@ def initialize_epoch(epoch: num):
         self.next_dynasty_add_wei_delta = self.second_next_dynasty_add_wei_delta
         self.next_dynasty_rmv_wei_delta = self.second_next_dynasty_rmv_wei_delta
         # Choose validators from queue
-        new_deposit_amount = 0
+        new_deposit_amount = as_wei_value(0, ether) / self.one_unit_of_m
+        self.second_next_dynasty_add_wei_delta = 0
         for i in range(1000):
             if (self.deposit_queue_end - self.deposit_queue_head > 0) and \
-                (self.validators[self.deposit_queue_head].deposit < self.validator_rotate_limit):
+                (new_deposit_amount + self.validators[self.deposit_queue_head].deposit < self.validator_rotate_limit):
+                new_deposit_amount += self.validators[self.deposit_queue_head].deposit
                 self.validators[self.deposit_queue_head].deposit = (self.validators[self.deposit_queue_head].deposit * self.one_unit_of_m) / self.deposit_scale_factor[self.current_epoch]
                 self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
-                self.deposit_queue_head += 1
                 self.second_next_dynasty_add_wei_delta += self.validators[self.deposit_queue_head].deposit
+                self.deposit_queue_head += 1
             else:
                 break
-        # self.second_next_dynasty_add_wei_delta = 0
         self.second_next_dynasty_rmv_wei_delta = 0
         self.dynasty_start_epoch[self.dynasty] = epoch
     self.dynasty_in_epoch[epoch] = self.dynasty
@@ -281,8 +286,8 @@ def deposit(validation_addr: address, withdrawal_addr: address):
     self.deposit_queue_end += 1
     # If there's no validators yet, 
     if self.total_curdyn_deposits == 0:
-        self.validators[self.deposit_queue_end - 1].deposit = msg.value / self.deposit_scale_factor[self.current_epoch]
-        self.validators[self.deposit_queue_end - 1].dynasty_start = self.dynasty + 2
+        self.validators[self.deposit_queue_head].deposit = msg.value / self.deposit_scale_factor[self.current_epoch]
+        self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
         self.deposit_queue_head += 1
         self.second_next_dynasty_add_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
 
@@ -358,9 +363,9 @@ def proc_reward(validator_index: num, reward: num(wei/m)):
     if ((ds <= dc) and (dc < de)):
         self.total_curdyn_deposits += reward
     if dc == de - 1:
-        self.next_dynasty_add_wei_delta -= reward
+        self.next_dynasty_rmv_wei_delta += reward
     if dc == de - 2:
-        self.second_next_dynasty_add_wei_delta -= reward
+        self.second_next_dynasty_rmv_wei_delta += reward
 
 # Process a prepare message
 def prepare(prepare_msg: bytes <= 1024):
