@@ -13,7 +13,7 @@ casper_config = {
     "owner": utils.checksum_encode(a0), # Backdoor address
     "base_interest_factor": 0.02,
     "base_penalty_factor": 0.002,
-    "validator_rotate_limit": 25000 * utils.denoms.ether + 1, # Max amount of ether of one deposit
+    "max_deposit": 25000 * utils.denoms.ether + 1, # Max amount of ether of one deposit
     "deposit_size_ceiling": 26800 * utils.denoms.ether + 1 # Max deposit size
 }
 
@@ -68,7 +68,7 @@ def mk_initializers(config, sender_privkey, starting_nonce=0):
     initiate_args = casper_ct.encode('initiate', [
         config["epoch_length"], config["withdrawal_delay"], config["owner"], sig_hasher_address,
         purity_checker_address, config["base_interest_factor"], config["base_penalty_factor"],
-        config["validator_rotate_limit"], config["deposit_size_ceiling"]
+        config["max_deposit"], config["deposit_size_ceiling"]
     ])
     casper_initiate_tx = Transaction(nonce + 1, gasprice, 1000000, casper_tx.creates, 0, initiate_args).sign(sender_privkey)
     # Return list of transactions and Casper address

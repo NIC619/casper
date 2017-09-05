@@ -115,7 +115,7 @@ prepare_log_topic: bytes32
 commit_log_topic: bytes32
 
 # Rotation limit
-validator_rotate_limit: public(decimal(wei / m))
+max_deposit: public(decimal(wei / m))
 
 # Deposit size ceiling
 deposit_size_ceiling: public(decimal(wei))
@@ -125,6 +125,15 @@ deposit_queue_head: public(num)
 
 # Number of validators including deposit queue
 deposit_queue_end: public(num)
+
+# Withdraw queue
+withdraw_queue: public(num[num])
+
+# HEAD of withdraw queue
+withdraw_queue_head: public(num)
+
+# END of withdraw queue
+withdraw_queue_end: public(num)
 
 # Unit m
 one_unit_of_m: decimal(m)
@@ -141,7 +150,7 @@ def initiate(# Epoch length, delay in epochs for withdrawing
             # Base interest and base penalty factors
             _base_interest_factor: decimal, _base_penalty_factor: decimal,
             # Validator rotate limit and deposit size ceiling
-            _validator_rotate_limit: wei_value, _deposit_size_ceiling: wei_value):
+            _max_deposit: wei_value, _deposit_size_ceiling: wei_value):
     assert not self.initialized
     self.initialized = True
     # Epoch length
@@ -172,7 +181,7 @@ def initiate(# Epoch length, delay in epochs for withdrawing
     # Set base unit of m
     self.one_unit_of_m = 1.0
     # Validator swap in/out limit
-    self.validator_rotate_limit = _validator_rotate_limit / self.one_unit_of_m
+    self.max_deposit = _max_deposit / self.one_unit_of_m
     self.deposit_size_ceiling = _deposit_size_ceiling * 1.0
     # Log topics for prepare and commit
     self.prepare_log_topic = sha3("prepare()")
@@ -241,11 +250,11 @@ def initialize_epoch(epoch: num):
         self.next_dynasty_add_wei_delta = self.second_next_dynasty_add_wei_delta
         self.next_dynasty_rmv_wei_delta = self.second_next_dynasty_rmv_wei_delta
         # Choose validators from queue
-        new_deposit_amount = as_wei_value(0, ether) / self.one_unit_of_m
         self.second_next_dynasty_add_wei_delta = 0
+        new_deposit_amount = as_wei_value(0, ether) / self.one_unit_of_m
         for i in range(1000):
             if (self.deposit_queue_end - self.deposit_queue_head > 0) and \
-                (new_deposit_amount + self.validators[self.deposit_queue_head].deposit < self.validator_rotate_limit):
+                (new_deposit_amount + self.validators[self.deposit_queue_head].deposit < self.max_deposit):
                 new_deposit_amount += self.validators[self.deposit_queue_head].deposit
                 self.validators[self.deposit_queue_head].deposit = (self.validators[self.deposit_queue_head].deposit * self.one_unit_of_m) / self.deposit_scale_factor[self.current_epoch]
                 self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
@@ -254,6 +263,18 @@ def initialize_epoch(epoch: num):
             else:
                 break
         self.second_next_dynasty_rmv_wei_delta = 0
+        new_withdraw_amount = as_wei_value(0, ether) * 1.0
+        for i in range(1000):
+            validator_index = self.withdraw_queue[self.withdraw_queue_head]
+            validator_deposit = self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch]
+            if(self.withdraw_queue_end - self.withdraw_queue_head > 0) and \
+                (new_withdraw_amount + validator_deposit < self.deposit_size_ceiling):
+                new_withdraw_amount += validator_deposit
+                self.validators[validator_index].dynasty_end = self.dynasty + 2
+                self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
+                self.withdraw_queue_head += 1
+            else:
+                break
         self.dynasty_start_epoch[self.dynasty] = epoch
     self.dynasty_in_epoch[epoch] = self.dynasty
     # Compute new ancestry hash, as well as expected source epoch and hash
@@ -277,7 +298,7 @@ def get_total_curdyn_deposits() -> wei_value:
 def deposit(validation_addr: address, withdrawal_addr: address):
     assert self.current_epoch == block.number / self.epoch_length
     assert extract32(raw_call(self.purity_checker, concat('\xa1\x90>\xab', as_bytes32(validation_addr)), gas=500000, outsize=32), 0) != as_bytes32(0)
-    assert msg.value / self.one_unit_of_m < self.validator_rotate_limit
+    assert msg.value / self.one_unit_of_m < self.max_deposit
     # Join the queue
     self.validators[self.deposit_queue_end] = {
         deposit: msg.value / self.one_unit_of_m,
@@ -314,10 +335,13 @@ def logout(logout_msg: bytes <= 1024):
     # Check that we haven't already withdrawn
     assert self.validators[validator_index].dynasty_end >= self.dynasty + 2
     # Check if deposit withdrawed surpass validator rotate limit
-    assert self.get_deposit_size(validator_index) < self.validator_rotate_limit * self.one_unit_of_m
+    # assert self.get_deposit_size(validator_index) < self.deposit_size_ceiling / self.one_unit_of_m
+    # Join withdraw queue
+    self.withdraw_queue[self.withdraw_queue_end] = validator_index
+    self.withdraw_queue_end += 1
     # Set the end dynasty
-    self.validators[validator_index].dynasty_end = self.dynasty + 2
-    self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
+    # self.validators[validator_index].dynasty_end = self.dynasty + 2
+    # self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
 
 # Removes a validator from the validator pool
 @internal
