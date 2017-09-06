@@ -293,6 +293,21 @@ def get_deposit_size(validator_index: num) -> num(wei):
 def get_total_curdyn_deposits() -> wei_value:
     return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
 
+def swapQueuePosition(position_i: num, position_j: num):
+    assert position_i >= self.deposit_queue_head and \
+            (position_i < position_j and position_j < self.deposit_queue_end)
+    if self.validators[position_i].deposit < self.validators[position_j].deposit:
+        # Swap
+        tmp_addr = self.validators[position_j].addr
+        self.validators[position_j].addr = self.validators[position_i].addr
+        self.validators[position_i].addr = tmp_addr
+        tmp_addr = self.validators[position_j].withdrawal_addr
+        self.validators[position_j].withdrawal_addr = self.validators[position_i].withdrawal_addr
+        self.validators[position_i].withdrawal_addr = tmp_addr
+        tmp_decimal = self.validators[position_j].deposit
+        self.validators[position_j].deposit = self.validators[position_i].deposit
+        self.validators[position_i].deposit = tmp_decimal
+
 # Send a deposit to join the validator set
 @payable
 def deposit(validation_addr: address, withdrawal_addr: address):
@@ -309,7 +324,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
         prev_commit_epoch: 0,
     }
     self.deposit_queue_end += 1
-    # If there's no validators yet, 
+    # skip the queue if there's no validators yet, makes initial deposit easier
     if self.total_curdyn_deposits == 0:
         self.validators[self.deposit_queue_head].deposit = msg.value / self.deposit_scale_factor[self.current_epoch]
         self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2

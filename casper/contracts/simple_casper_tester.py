@@ -164,78 +164,78 @@ print('Prepare and Commit messages proccessed\n')
 
 # Test deposit size ceiling
 # validators' deposit will keep increasing slowly until one of their deposit hits deposit size ceiling
-for i in range(100):
-    current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-    for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
-            casper.prepare(prepare)
-    for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
-        casper.commit(commit)
-    # print('Prepare and Commit messages proccessed\n')
-    if(abs(casper.get_deposit_size(0) - casper_config["deposit_size_ceiling"]) < 5):
-        print("Deposit of validaot 0,1 and 2 reachs deposit size ceiling, log them out\n")
-        casper.logout(mk_logout(0, _e, t.k1))
-        casper.logout(mk_logout(1, _e, t.k2))
-        casper.logout(mk_logout(2, _e, t.k3))
-        assert casper.get_withdraw_queue_end() == 3
-        break
+# for i in range(100):
+#     current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+#     for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
+#             casper.prepare(prepare)
+#     for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
+#         casper.commit(commit)
+#     # print('Prepare and Commit messages proccessed\n')
+#     if(abs(casper.get_deposit_size(0) - casper_config["deposit_size_ceiling"]) < 5):
+#         print("Deposit of validaot 0,1 and 2 reachs deposit size ceiling, log them out\n")
+#         casper.logout(mk_logout(0, _e, t.k1))
+#         casper.logout(mk_logout(1, _e, t.k2))
+#         casper.logout(mk_logout(2, _e, t.k3))
+#         assert casper.get_withdraw_queue_end() == 3
+#         break
+# for i in range(5):
+#     print("Deposit of validator %d in epoch %d: %.8f" % (i, _e, casper.get_deposit_size(i)/utils.denoms.ether))
+# # Check if log out succed
+# for i in range(5):
+#     current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+#     if i < 2:
+#         assert casper.get_withdraw_queue_head() == i+1 and casper.get_second_next_dynasty_rmv_wei_delta() == casper.get_validators__deposit(i)
+#     else:
+#         assert abs(sum(map(casper.get_deposit_size, range(i-1, 5))) - casper.get_total_curdyn_deposits()) < 5
+#         print("Log out validator %d successful\n" % (i-2))
+#         key_pairs = key_pairs[1:]
+#     for prepare in [mk_prepare(j, _e, _a, _se, _sa, k) for j, k in key_pairs]:
+#         casper.prepare(prepare)
+#     for commit in [mk_commit(j, _e, _a, casper.get_validators__prev_commit_epoch(j), k) for j, k in key_pairs]:
+#         casper.commit(commit)
 
-for i in range(5):
-    print("Deposit of validator %d in epoch %d: %.8f" % (i, _e, casper.get_deposit_size(i)/utils.denoms.ether))
+# # Test non finalization losses caused by all validators going off-line
+# current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+# ds_1_non_finalized = sum(map(casper.get_deposit_size, range(5)))
+# print("Non-finalization losses (first epoch): %.4f\n" % (1 - ds_1_non_finalized / ds_0_non_finalized))
+# assert ds_1_non_finalized < ds_0_non_finalized
 
-# Check if log out succed
-for i in range(5):
-    current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-    if i < 2:
-        assert casper.get_withdraw_queue_head() == i+1 and casper.get_second_next_dynasty_rmv_wei_delta() == casper.get_validators__deposit(i)
-    else:
-        assert abs(sum(map(casper.get_deposit_size, range(i-1, 5))) - casper.get_total_curdyn_deposits()) < 5
-        print("Log out validator %d successful\n" % (i-2))
-        key_pairs = key_pairs[1:]
-    for prepare in [mk_prepare(j, _e, _a, _se, _sa, k) for j, k in key_pairs]:
-        casper.prepare(prepare)
-    for commit in [mk_commit(j, _e, _a, casper.get_validators__prev_commit_epoch(j), k) for j, k in key_pairs]:
-        casper.commit(commit)
+# current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+# ds_2_non_finalized = sum(map(casper.get_deposit_size, range(5)))
+# print("Non-finalization losses (second epoch): %.4f\n" % (1 - ds_2_non_finalized / ds_1_non_finalized))
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-ds_1_non_finalized = sum(map(casper.get_deposit_size, range(5)))
-print("Non-finalization losses (first epoch): %.4f\n" % (1 - ds_1_non_finalized / ds_0_non_finalized))
-assert ds_1_non_finalized < ds_0_non_finalized
+# current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+# ds_3_non_finalized = sum(map(casper.get_deposit_size, range(5)))
+# print("Non-finalization losses (third epoch): %.4f\n" % (1 - ds_3_non_finalized / ds_2_non_finalized))
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-ds_2_non_finalized = sum(map(casper.get_deposit_size, range(5)))
-print("Non-finalization losses (second epoch): %.4f\n" % (1 - ds_2_non_finalized / ds_1_non_finalized))
+# current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+# ds_4_non_finalized = sum(map(casper.get_deposit_size, range(5)))
+# print("Non-finalization losses (fourth epoch): %.4f\n" % (1 - ds_4_non_finalized / ds_3_non_finalized))
+# assert (ds_3_non_finalized - ds_4_non_finalized) > (ds_1_non_finalized - ds_2_non_finalized)
+# for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
+#     casper.prepare(prepare)
+# assert casper.get_main_hash_justified()
+# s.mine()
+# for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
+#     casper.commit(commit)
+# assert casper.get_main_hash_finalized()
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-ds_3_non_finalized = sum(map(casper.get_deposit_size, range(5)))
-print("Non-finalization losses (third epoch): %.4f\n" % (1 - ds_3_non_finalized / ds_2_non_finalized))
+# current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
+# # print(casper.get_latest_npf(), casper.get_latest_ncf(), casper.get_latest_resize_factor())
+# ds_after_finalize = sum(map(casper.get_deposit_size, range(5)))
+# assert casper.get_latest_npf() < 0.1 and casper.get_latest_ncf() < 0.1
+# assert ds_after_finalize > ds_4_non_finalized
+# print("Finalization gains: %.4f" % (ds_after_finalize / ds_4_non_finalized - 1))
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-ds_4_non_finalized = sum(map(casper.get_deposit_size, range(5)))
-print("Non-finalization losses (fourth epoch): %.4f\n" % (1 - ds_4_non_finalized / ds_3_non_finalized))
-assert (ds_3_non_finalized - ds_4_non_finalized) > (ds_1_non_finalized - ds_2_non_finalized)
-for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
-    casper.prepare(prepare)
-assert casper.get_main_hash_justified()
-s.mine()
-for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
-    casper.commit(commit)
-assert casper.get_main_hash_finalized()
+# for i in range(5):
+#     print("Deposit of validator %d in epoch %d: %.8f" % (i, _e, casper.get_deposit_size(i)/utils.denoms.ether))
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
-# print(casper.get_latest_npf(), casper.get_latest_ncf(), casper.get_latest_resize_factor())
-ds_after_finalize = sum(map(casper.get_deposit_size, range(5)))
-assert casper.get_latest_npf() < 0.1 and casper.get_latest_ncf() < 0.1
-assert ds_after_finalize > ds_4_non_finalized
-print("Finalization gains: %.4f" % (ds_after_finalize / ds_4_non_finalized - 1))
-
-for i in range(5):
-    print("Deposit of validator %d in epoch %d: %.8f" % (i, _e, casper.get_deposit_size(i)/utils.denoms.ether))
-key_pairs = list(zip([2,3,4], [t.k3, t.k4, t.k5]))
-
+# Test non finalization losses caused by partial validators going off-line
 old_active_validator_deposit = sum(map(casper.get_deposit_size, range(2, 5)))
 print("Deposit of active validators: %.8f" % (old_active_validator_deposit / utils.denoms.ether))
 old_inactive_validator_deposit = sum(map(casper.get_deposit_size, range(2)))
 print("Deposit of inactive validators: %.8f" % (old_inactive_validator_deposit / utils.denoms.ether))
+key_pairs = list(zip([2,3,4], [t.k3, t.k4, t.k5]))
 
 # SCENARIO 1, HERE ATTACKER WILL NOT PREPARE
 print("\nValidator 0 and 1 will now go off-line\n")
@@ -290,8 +290,8 @@ for i in range(5):
 key_pairs = list(zip([0,1,2,3,4], [t.k1, t.k2, t.k3, t.k4, t.k5]))
 # key_pairs = list(zip([2,3,4], [t.k3, t.k4, t.k5]))
 
-current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
 #Test deposit queue
+current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
 induct_validator(casper, t.k6, 5000 * utils.denoms.ether)
 print("Induct validator %d with 5000 ether" % (casper.get_deposit_queue_head() - 1))
 induct_validator(casper, t.k6, 5000 * utils.denoms.ether)
@@ -300,6 +300,12 @@ induct_validator(casper, t.k6, 10000 * utils.denoms.ether)
 print("Induct validator %d with 10000 ether" % (casper.get_deposit_queue_head() - 1))
 induct_validator(casper, t.k6, 25000 * utils.denoms.ether)
 print("Induct validator %d with 25000 ether" % (casper.get_deposit_queue_head() - 1))
+# Test swapQueuePosition
+assert casper.get_validators__deposit(5) / utils.denoms.ether == 5000 and casper.get_validators__deposit(7) / utils.denoms.ether == 10000
+casper.swapQueuePosition(5, 7)
+assert casper.get_validators__deposit(5) / utils.denoms.ether == 10000 and casper.get_validators__deposit(7) / utils.denoms.ether == 5000
+print("Successfully swap validator 5 and 7 in the queue")
+# Finish this epoch
 for prepare in [mk_prepare(i, _e, _a, _se, _sa, k) for i, k in key_pairs]:
         casper.prepare(prepare)
 for commit in [mk_commit(i, _e, _a, casper.get_validators__prev_commit_epoch(i), k) for i, k in key_pairs]:
