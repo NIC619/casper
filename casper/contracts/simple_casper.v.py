@@ -276,15 +276,6 @@ def initialize_epoch(epoch: num):
     self.main_hash_justified = False
     self.main_hash_finalized = False
 
-# Gets the current deposit size
-@constant
-def get_deposit_size(validator_index: num) -> num(wei):
-    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
-
-@constant
-def get_total_curdyn_deposits() -> wei_value:
-    return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
-
 def swapQueuePosition(position_i: num, position_j: num):
     assert position_i >= self.deposit_queue_head and \
             (position_i < position_j and position_j < self.deposit_queue_end)
@@ -349,6 +340,15 @@ def logout(logout_msg: bytes <= 1024):
     # Set the end dynasty
     # self.validators[validator_index].dynasty_end = self.dynasty + 2
     # self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
+
+# Gets the current deposit size
+@constant
+def get_deposit_size(validator_index: num) -> num(wei):
+    return floor(self.validators[validator_index].deposit * self.deposit_scale_factor[self.current_epoch])
+
+@constant
+def get_total_curdyn_deposits() -> wei_value:
+    return floor(self.total_curdyn_deposits * self.deposit_scale_factor[self.current_epoch])
 
 # Removes a validator from the validator pool
 @internal
