@@ -19,16 +19,10 @@ validators: public({
 dynasty: public(num)
 
 # Amount of wei added to the total deposits in the next dynasty
-next_dynasty_add_wei_delta: public(decimal(wei / m))
+next_dynasty_wei_delta: public(decimal(wei / m))
 
 # Amount of wei added to the total deposits in the dynasty after that
-second_next_dynasty_add_wei_delta: public(decimal(wei / m))
-
-# Amount of wei subtracted from the total deposits in the next dynasty
-next_dynasty_rmv_wei_delta: public(decimal(wei / m))
-
-# Amount of wei subtracted from the total deposits in the dynasty after that
-second_next_dynasty_rmv_wei_delta: public(decimal(wei / m))
+second_next_dynasty_wei_delta: public(decimal(wei / m))
 
 # Total deposits in the current dynasty
 total_curdyn_deposits: decimal(wei / m)
@@ -246,11 +240,10 @@ def initialize_epoch(epoch: num):
     # Increment the dynasty (if there are no validators yet, then all hashes finalize)
     if self.main_hash_finalized:
         self.dynasty += 1
-        self.total_curdyn_deposits += (self.next_dynasty_add_wei_delta - self.next_dynasty_rmv_wei_delta)
-        self.next_dynasty_add_wei_delta = self.second_next_dynasty_add_wei_delta
-        self.next_dynasty_rmv_wei_delta = self.second_next_dynasty_rmv_wei_delta
+        self.total_curdyn_deposits += self.next_dynasty_wei_delta
+        self.next_dynasty_wei_delta = self.second_next_dynasty_wei_delta
         # Choose validators from queue
-        self.second_next_dynasty_add_wei_delta = 0
+        self.second_next_dynasty_wei_delta = 0
         new_deposit_amount = as_wei_value(0, ether) / self.one_unit_of_m
         for i in range(1000):
             if (self.deposit_queue_end - self.deposit_queue_head > 0) and \
@@ -258,11 +251,10 @@ def initialize_epoch(epoch: num):
                 new_deposit_amount += self.validators[self.deposit_queue_head].deposit
                 self.validators[self.deposit_queue_head].deposit = (self.validators[self.deposit_queue_head].deposit * self.one_unit_of_m) / self.deposit_scale_factor[self.current_epoch]
                 self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
-                self.second_next_dynasty_add_wei_delta += self.validators[self.deposit_queue_head].deposit
+                self.second_next_dynasty_wei_delta += self.validators[self.deposit_queue_head].deposit
                 self.deposit_queue_head += 1
             else:
                 break
-        self.second_next_dynasty_rmv_wei_delta = 0
         new_withdraw_amount = as_wei_value(0, ether) * 1.0
         for i in range(1000):
             validator_index = self.withdraw_queue[self.withdraw_queue_head]
@@ -271,7 +263,7 @@ def initialize_epoch(epoch: num):
                 (new_withdraw_amount + validator_deposit < self.deposit_size_ceiling):
                 new_withdraw_amount += validator_deposit
                 self.validators[validator_index].dynasty_end = self.dynasty + 2
-                self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
+                self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
                 self.withdraw_queue_head += 1
             else:
                 break
@@ -329,7 +321,7 @@ def deposit(validation_addr: address, withdrawal_addr: address):
         self.validators[self.deposit_queue_head].deposit = msg.value / self.deposit_scale_factor[self.current_epoch]
         self.validators[self.deposit_queue_head].dynasty_start = self.dynasty + 2
         self.deposit_queue_head += 1
-        self.second_next_dynasty_add_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
+        self.second_next_dynasty_wei_delta += msg.value / self.deposit_scale_factor[self.current_epoch]
 
 # Log in or log out from the validator set. A logged out validator can log
 # back in later, if they do not log in for an entire withdrawal period,
@@ -356,13 +348,13 @@ def logout(logout_msg: bytes <= 1024):
     self.withdraw_queue_end += 1
     # Set the end dynasty
     # self.validators[validator_index].dynasty_end = self.dynasty + 2
-    # self.second_next_dynasty_rmv_wei_delta += self.validators[validator_index].deposit
+    # self.second_next_dynasty_wei_delta -= self.validators[validator_index].deposit
 
 # Removes a validator from the validator pool
 @internal
 def delete_validator(validator_index: num):
     if self.validators[validator_index].dynasty_end > self.dynasty + 2:
-        self.next_dynasty_add_wei_delta -= self.validators[validator_index].deposit
+        self.next_dynasty_wei_delta -= self.validators[validator_index].deposit
     self.validators[validator_index] = {
         deposit: 0,
         dynasty_start: 0,
@@ -406,9 +398,9 @@ def proc_reward(validator_index: num, reward: num(wei/m)):
     if ((ds <= dc) and (dc < de)):
         self.total_curdyn_deposits += reward
     if dc == de - 1:
-        self.next_dynasty_rmv_wei_delta += reward
+        self.next_dynasty_wei_delta += reward
     if dc == de - 2:
-        self.second_next_dynasty_rmv_wei_delta += reward
+        self.second_next_dynasty_wei_delta += reward
 
 # Process a prepare message
 def prepare(prepare_msg: bytes <= 1024):

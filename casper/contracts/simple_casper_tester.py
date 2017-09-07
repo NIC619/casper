@@ -184,7 +184,7 @@ print('Prepare and Commit messages proccessed\n')
 # for i in range(5):
 #     current_dyn, _e, _a, _se, _sa = new_epoch(s, casper, EPOCH_LENGTH)
 #     if i < 2:
-#         assert casper.get_withdraw_queue_head() == i+1 and casper.get_second_next_dynasty_rmv_wei_delta() == casper.get_validators__deposit(i)
+        # assert casper.get_withdraw_queue_head() == i+1 and casper.get_second_next_dynasty_wei_delta() == casper.get_validators__deposit(i)
 #     else:
 #         assert abs(sum(map(casper.get_deposit_size, range(i-1, 5))) - casper.get_total_curdyn_deposits()) < 5
 #         print("Log out validator %d successful\n" % (i-2))
